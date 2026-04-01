@@ -338,14 +338,21 @@ function repairTruncatedJSON(str: any) {
   return repaired;
 }
 
-function parseAgentJSON(raw) {
-  // Extract the outermost JSON object (handles preamble/postamble text)
+function parseAgentJSON(raw: string): any {
   const match = raw.match(/\{[\s\S]*\}/);
-  if (!match)
+
+  if (!match) {
     throw new Error(
-      "Agent returned no JSON object. Raw output: " + raw.slice(0, 200),
+      "Agent returned no JSON object. Raw output: " + raw.slice(0, 200)
     );
-  const candidate = match[0];
+  }
+
+  try {
+    return JSON.parse(match[0]);
+  } catch (error) {
+    throw new Error("Invalid JSON format from agent");
+  }
+}
 
   // Try clean parse first
   try {
