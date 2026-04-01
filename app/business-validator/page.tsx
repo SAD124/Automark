@@ -354,20 +354,6 @@ function parseAgentJSON(raw: string): any {
   }
 }
 
-  // Try clean parse first
-  try {
-    return JSON.parse(candidate);
-  } catch (_) {}
-
-  // Try repair (handles token-limit truncation mid-JSON)
-  try {
-    const repaired = repairTruncatedJSON(candidate);
-    return JSON.parse(repaired);
-  } catch (e) {
-    throw new Error("Agent returned malformed JSON: " + e.message);
-  }
-}
-
 // ─── HTML builder (repair truncation) ────────────────────────────────────────
 function buildHTML(rawHTML) {
   let html = rawHTML;
