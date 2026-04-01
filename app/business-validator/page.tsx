@@ -1,6 +1,140 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+  type CSSProperties,
+  type ChangeEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
+
+type ClaudeUsage = {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+};
+
+type OpenAIUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+};
+
+type Usage = ClaudeUsage & OpenAIUsage;
+
+type AIResult = {
+  text: string;
+  usage: Usage;
+};
+
+type CompetitionRisk = "Low" | "Medium" | "High";
+type Verdict = "GO" | "NO-GO" | "MAYBE";
+type VerdictLabel = "STRONG GO" | "CAUTIOUS GO" | "HIGH RISK" | "NO-GO";
+type RiskLevel = "Low" | "Medium" | "High" | "Critical";
+
+type EvalScores = {
+  devComplexity: number;
+  launchCost: string;
+  marketViability: number;
+  monetizationPotential: number;
+  timeToRevenue: string;
+  aiLeverage: number;
+  competitionRisk: CompetitionRisk;
+  viralPotential: number;
+};
+
+type BudgetAssessment = {
+  stated: string;
+  realistic: string;
+  gap: string;
+  note: string;
+};
+
+type FinancialProjection = {
+  breakEvenUsers: string;
+  mrrTarget: string;
+  timeToBreakEven: string;
+  revenueYear1Low: string;
+  revenueYear1High: string;
+  keyAssumptions: string;
+};
+
+type Evaluation = {
+  scores: EvalScores;
+  executiveSummary: string;
+  verdictLabel: VerdictLabel;
+  riskLevel: RiskLevel;
+  keyDrivers: string[];
+  founderRealityCheck: string[];
+  killShots: string[];
+  budgetAssessment: BudgetAssessment;
+  financialProjection: FinancialProjection;
+  verdict: Verdict;
+  confidence: number;
+  verdictReason: string;
+  devApproach: string;
+  dependencies: string[];
+  marketingApproach: string;
+  monetizationStrategy: string;
+  risks: string;
+  additionalInsights: string;
+};
+
+type RawEvaluation = Partial<
+  Omit<Evaluation, "scores" | "budgetAssessment" | "financialProjection">
+> & {
+  scores?: Partial<EvalScores>;
+  budgetAssessment?: Partial<BudgetAssessment>;
+  financialProjection?: Partial<FinancialProjection>;
+};
+
+type FormState = {
+  appName: string;
+  description: string;
+  audience: string;
+  budget: string;
+  revenue: string;
+};
+
+type CostRun = {
+  label: string;
+  tokens: number;
+  cost: number;
+  cacheRead: number;
+};
+
+type Step = "input" | "agent1" | "done1" | "agent2" | "done2";
+type UiTab = "preview" | "code";
+type CTAState = "idle" | "ready" | "running";
+type ApiError = Error & { status?: number };
+
+const EMPTY_FORM: FormState = {
+  appName: "",
+  description: "",
+  audience: "",
+  budget: "",
+  revenue: "",
+};
+
+function isFormState(value: unknown): value is FormState {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.appName === "string" &&
+    typeof candidate.description === "string" &&
+    typeof candidate.audience === "string" &&
+    typeof candidate.budget === "string" &&
+    typeof candidate.revenue === "string"
+  );
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
+}
 
 // ─── Pricing ──────────────────────────────────────────────────────────────────
 // Claude Haiku 4.5
@@ -16,7 +150,7 @@ const PRICE_GPT4O = {
   output: 10.0 / 1_000_000,
 };
 
-function calcGPTCost(usage: any) {
+function calcGPTCost(usage?: OpenAIUsage) {
   if (!usage) return 0;
   return (
     Math.max(0, usage.prompt_tokens || 0) * PRICE_GPT4O.input +
@@ -24,7 +158,7 @@ function calcGPTCost(usage: any) {
   );
 }
 
-function calcCost(usage: any) {
+function calcCost(usage?: ClaudeUsage) {
   if (!usage) return 0;
   return (
     Math.max(0, usage.input_tokens || 0) * PRICE.input +
@@ -157,13 +291,13 @@ IMPORTANT: Write all CSS, close </style>, write </head>, write <body>, write all
 const TRANSIENT_CODES = new Set([429, 500, 502, 503, 529]);
 
 async function callClaudeOnce(
-  systemPrompt: any,
-  userMsg: any,
-  maxTokens: any,
-  signal: any,
+  systemPrompt: string,
+  userMsg: string,
+  maxTokens: number,
+  signal: AbortSignal,
   model = "claude-haiku-4-5-20251001",
   useCache = true,
-) {
+): Promise<AIResult> {
   const res = await fetch("/api/claude", {
     method: "POST",
     signal,
@@ -189,11 +323,15 @@ async function callClaudeOnce(
     try {
       const e = await res.json();
       msg = e?.error?.message || msg;
-    } catch (_) {}
+    } catch {}
     throw new Error(msg);
   }
 
-  const data = await res.json();
+  const data = (await res.json()) as {
+    error?: { message?: string };
+    content?: Array<{ text?: string }>;
+    usage?: ClaudeUsage;
+  };
 
   if (data.error) {
     const err = Object.assign(new Error(data.error.message || "API error"), {
@@ -202,17 +340,17 @@ async function callClaudeOnce(
     throw err;
   }
 
-  const text = (data.content || []).map((b: any) => b.text || "").join("");
+  const text = (data.content || []).map((block) => block.text || "").join("");
   return { text, usage: data.usage || {} };
 }
 
 async function callClaude(
-  systemPrompt: any,
-  userMsg: any,
-  maxTokens: any,
+  systemPrompt: string,
+  userMsg: string,
+  maxTokens: number,
   model = "claude-haiku-4-5-20251001",
   useCache = true,
-) {
+): Promise<AIResult> {
   const maxAttempts = 3;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const controller = new AbortController();
@@ -231,9 +369,10 @@ async function callClaude(
       return result;
     } catch (err) {
       clearTimeout(timer);
-      const error = err as any;
+      const error = err as ApiError;
       const isTimeout = error.name === "AbortError";
-      const isTransient = TRANSIENT_CODES.has(error.status);
+      const isTransient =
+        typeof error.status === "number" && TRANSIENT_CODES.has(error.status);
       const delay = attempt === 0 ? 1500 : 3000;
       if (attempt < maxAttempts - 1 && (isTimeout || isTransient)) {
         await new Promise((r) => setTimeout(r, delay));
@@ -244,10 +383,16 @@ async function callClaude(
         : error;
     }
   }
+
+  throw new Error("Claude request failed after retries.");
 }
 
 // ─── OpenAI call ─────────────────────────────────────────────────────────────
-async function callOpenAI(systemPrompt: any, userMsg: any, maxTokens = 3200) {
+async function callOpenAI(
+  systemPrompt: string,
+  userMsg: string,
+  maxTokens = 3200,
+): Promise<AIResult> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60_000);
@@ -274,7 +419,7 @@ async function callOpenAI(systemPrompt: any, userMsg: any, maxTokens = 3200) {
         try {
           const e = await res.json();
           msg = e?.error?.message || msg;
-        } catch (_) {}
+        } catch {}
         const err = Object.assign(new Error(msg), { status: res.status });
         if (attempt < 2 && [429, 500, 502, 503].includes(res.status)) {
           await new Promise((r) => setTimeout(r, attempt === 0 ? 1500 : 3000));
@@ -283,7 +428,11 @@ async function callOpenAI(systemPrompt: any, userMsg: any, maxTokens = 3200) {
         throw err;
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as {
+        error?: { message?: string };
+        choices?: Array<{ message?: { content?: string } }>;
+        usage?: OpenAIUsage;
+      };
       if (data.error) throw new Error(data.error.message || "OpenAI error");
 
       const text = data.choices?.[0]?.message?.content || "";
@@ -291,7 +440,7 @@ async function callOpenAI(systemPrompt: any, userMsg: any, maxTokens = 3200) {
       return { text, usage };
     } catch (err) {
       clearTimeout(timer);
-      const error = err as any;
+      const error = err as ApiError;
       const isTimeout = error.name === "AbortError";
       if (attempt < 2 && isTimeout) {
         await new Promise((r) => setTimeout(r, attempt === 0 ? 1500 : 3000));
@@ -302,43 +451,12 @@ async function callOpenAI(systemPrompt: any, userMsg: any, maxTokens = 3200) {
         : error;
     }
   }
+
+  throw new Error("OpenAI request failed after retries.");
 }
 
 // ─── JSON parse with truncation repair ───────────────────────────────────────
-function repairTruncatedJSON(str: any) {
-  // Walk the string tracking open braces/brackets/strings and close them
-  let inString = false;
-  let escape = false;
-  const stack = [];
-  for (let i = 0; i < str.length; i++) {
-    const c = str[i];
-    if (escape) {
-      escape = false;
-      continue;
-    }
-    if (c === "\\") {
-      escape = true;
-      continue;
-    }
-    if (c === '"') {
-      inString = !inString;
-    } else if (!inString) {
-      if (c === "{") stack.push("}");
-      else if (c === "[") stack.push("]");
-      else if (c === "}" || c === "]") stack.pop();
-    }
-  }
-  // If we're mid-string, close it first
-  let repaired = str;
-  if (inString) repaired += '"';
-  // Close any trailing comma before closing structure
-  repaired = repaired.replace(/,\s*$/, "");
-  // Close open structures in reverse order
-  repaired += stack.reverse().join("");
-  return repaired;
-}
-
-function parseAgentJSON(raw: string): any {
+function parseAgentJSON(raw: string): RawEvaluation {
   const match = raw.match(/\{[\s\S]*\}/);
 
   if (!match) {
@@ -348,14 +466,14 @@ function parseAgentJSON(raw: string): any {
   }
 
   try {
-    return JSON.parse(match[0]);
-  } catch (error) {
+    return JSON.parse(match[0]) as RawEvaluation;
+  } catch {
     throw new Error("Invalid JSON format from agent");
   }
 }
 
 // ─── HTML builder (repair truncation) ────────────────────────────────────────
-function buildHTML(rawHTML) {
+function buildHTML(rawHTML: string) {
   let html = rawHTML;
   const fenced = html.match(/```(?:html)?\s*\n([\s\S]*?)```/i);
   if (fenced) html = fenced[1];
@@ -369,7 +487,7 @@ function buildHTML(rawHTML) {
     const afterStyle = html.slice(styleOpen + 7);
     const htmlLeak = afterStyle.match(/\n\s*<[a-zA-Z]/);
     if (htmlLeak) {
-      const cutIdx = styleOpen + 7 + htmlLeak.index;
+      const cutIdx = styleOpen + 7 + (htmlLeak.index ?? 0);
       const cssContent = html.slice(styleOpen + 7, cutIdx);
       const lastBrace = cssContent.lastIndexOf("}");
       const cleanCSS =
@@ -402,7 +520,7 @@ const VALID_VERDICT_LABELS = new Set([
 ]);
 const VALID_RISK_LEVELS = new Set(["Low", "Medium", "High", "Critical"]);
 
-function normalizeEval(raw) {
+function normalizeEval(raw: RawEvaluation): Evaluation {
   const s = raw.scores || {};
   const fp = raw.financialProjection || {};
   const ba = raw.budgetAssessment || {};
@@ -414,20 +532,30 @@ function normalizeEval(raw) {
       monetizationPotential: clampScore(s.monetizationPotential),
       timeToRevenue: String(s.timeToRevenue || "Unknown"),
       aiLeverage: clampScore(s.aiLeverage),
-      competitionRisk: VALID_RISKS.has(s.competitionRisk)
-        ? s.competitionRisk
-        : "Medium",
+      competitionRisk:
+        typeof s.competitionRisk === "string" &&
+        VALID_RISKS.has(s.competitionRisk)
+          ? (s.competitionRisk as CompetitionRisk)
+          : "Medium",
       viralPotential: clampScore(s.viralPotential),
     },
-    verdict: VALID_VERDICTS.has(raw.verdict) ? raw.verdict : "MAYBE",
-    verdictLabel: VALID_VERDICT_LABELS.has(raw.verdictLabel)
-      ? raw.verdictLabel
+    verdict:
+      typeof raw.verdict === "string" && VALID_VERDICTS.has(raw.verdict)
+        ? (raw.verdict as Verdict)
+        : "MAYBE",
+    verdictLabel:
+      typeof raw.verdictLabel === "string" &&
+      VALID_VERDICT_LABELS.has(raw.verdictLabel)
+        ? (raw.verdictLabel as VerdictLabel)
       : raw.verdict === "GO"
         ? "CAUTIOUS GO"
         : raw.verdict === "NO-GO"
           ? "NO-GO"
           : "HIGH RISK",
-    riskLevel: VALID_RISK_LEVELS.has(raw.riskLevel) ? raw.riskLevel : "Medium",
+    riskLevel:
+      typeof raw.riskLevel === "string" && VALID_RISK_LEVELS.has(raw.riskLevel)
+        ? (raw.riskLevel as RiskLevel)
+        : "Medium",
     confidence: Math.min(100, Math.max(0, Number(raw.confidence) || 50)),
     executiveSummary: String(raw.executiveSummary || raw.verdictReason || ""),
     verdictReason: String(raw.verdictReason || "No reason provided."),
@@ -463,7 +591,7 @@ function normalizeEval(raw) {
   };
 }
 
-function clampScore(v) {
+function clampScore(v: unknown) {
   if (v == null) return 5;
   const n = Number(v);
   return isNaN(n) ? 5 : Math.min(10, Math.max(1, Math.round(n)));
@@ -502,7 +630,22 @@ const BENCHMARKS = {
   devComplexity: { low: 4, high: 7, label: "standard SaaS = 5-7/10" },
 };
 
-function ProgressBar({ label, metricKey, value, invert = false, benchmark }) {
+type MetricKey = keyof typeof BENCHMARKS;
+type Benchmark = (typeof BENCHMARKS)[MetricKey];
+
+function ProgressBar({
+  label,
+  metricKey,
+  value,
+  invert = false,
+  benchmark,
+}: {
+  label: string;
+  metricKey: MetricKey;
+  value: number;
+  invert?: boolean;
+  benchmark?: Benchmark;
+}) {
   const safe = isNaN(value) ? 5 : value;
   const pct = (safe / 10) * 100;
   const isGood = invert ? safe <= 4 : safe >= 7;
@@ -597,7 +740,19 @@ function ProgressBar({ label, metricKey, value, invert = false, benchmark }) {
   );
 }
 
-function Chip({ label, value, highlight, sub, warn }) {
+function Chip({
+  label,
+  value,
+  highlight,
+  sub,
+  warn,
+}: {
+  label: string;
+  value: string;
+  highlight?: string;
+  sub?: string;
+  warn?: boolean;
+}) {
   const color = highlight || "var(--primary)";
   return (
     <div
@@ -647,7 +802,7 @@ function Chip({ label, value, highlight, sub, warn }) {
   );
 }
 
-function Tag({ children }) {
+function Tag({ children }: { children: ReactNode }) {
   return (
     <span
       style={{
@@ -666,7 +821,15 @@ function Tag({ children }) {
   );
 }
 
-function CollapsibleSection({ title, summary, content }) {
+function CollapsibleSection({
+  title,
+  summary,
+  content,
+}: {
+  title: string;
+  summary: string;
+  content: string;
+}) {
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
   return (
@@ -766,7 +929,15 @@ function CollapsibleSection({ title, summary, content }) {
   );
 }
 
-function Spinner({ label, substep, isAgent2 }) {
+function Spinner({
+  label,
+  substep,
+  isAgent2 = false,
+}: {
+  label: string;
+  substep?: string;
+  isAgent2?: boolean;
+}) {
   const [tick, setTick] = useState(0);
   const [msgIdx, setMsgIdx] = useState(0);
 
@@ -983,7 +1154,7 @@ function Spinner({ label, substep, isAgent2 }) {
   );
 }
 
-function CostBar({ runs }) {
+function CostBar({ runs }: { runs: CostRun[] }) {
   if (!runs.length) return null;
   const total = runs.reduce((s, r) => s + r.cost, 0);
   const totalTokens = runs.reduce((s, r) => s + r.tokens, 0);
@@ -1117,8 +1288,8 @@ function CostBar({ runs }) {
   );
 }
 
-function PhonePreview({ html }) {
-  const iframeRef = useRef(null);
+function PhonePreview({ html }: { html: string }) {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   useEffect(() => {
     if (!html) return;
     const frame = iframeRef.current;
@@ -1245,7 +1416,17 @@ const CEO_PHOTOS = {
   sam: "https://unavatar.io/x/sama",
 };
 
-function CeoAvatar({ name, accent, src }) {
+type PersonaKey = keyof typeof CEO_PHOTOS;
+
+function CeoAvatar({
+  name,
+  accent,
+  src,
+}: {
+  name: string;
+  accent: string;
+  src: string;
+}) {
   const [imgFailed, setImgFailed] = useState(false);
   const initials = name
     .split(" ")
@@ -1281,6 +1462,7 @@ function CeoAvatar({ name, accent, src }) {
       </div>
       {/* Real photo layered on top — hides on load error */}
       {!imgFailed && (
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={src}
           alt={name}
@@ -1300,17 +1482,7 @@ function CeoAvatar({ name, accent, src }) {
   );
 }
 
-// riskColor helper (used inside component, defined before main component)
-const riskColorFn = (r) =>
-  r === "Low"
-    ? "var(--primary)"
-    : r === "Medium"
-      ? "var(--secondary)"
-      : r === "High"
-        ? "#ff8800"
-        : "#ff4444";
-
-const vlColorFn = (label) =>
+const vlColorFn = (label: VerdictLabel) =>
   label === "STRONG GO"
     ? "var(--primary)"
     : label === "CAUTIOUS GO"
@@ -1319,26 +1491,28 @@ const vlColorFn = (label) =>
         ? "var(--secondary)"
         : "#ff4444";
 
-function AIPersonasBar({ gptEval, gptError }) {
+function AIPersonasBar({
+  gptEval,
+  gptError,
+}: {
+  gptEval: Evaluation | null;
+  gptError: string;
+}) {
   const personas = [
     {
-      key: "dario",
+      key: "dario" as PersonaKey,
       name: "Dario Amodei",
       title: "CEO · Anthropic",
-      model: "Claude Haiku 4.5",
       accent: "var(--primary)",
-      eval: null, // Claude eval shown in main card, not here
-      active: true,
+      eval: null as Evaluation | null,
       tag: "CLAUDE",
     },
     {
-      key: "sam",
+      key: "sam" as PersonaKey,
       name: "Sam Altman",
       title: "CEO · OpenAI",
-      model: "GPT-4o",
       accent: "#74b9ff",
       eval: gptEval,
-      active: true,
       tag: "GPT-4o",
     },
   ];
@@ -1360,7 +1534,6 @@ function AIPersonasBar({ gptEval, gptError }) {
       </div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         {personas.map((p) => {
-          const hasResult = p.key === "dario" || (p.key === "sam" && p.eval);
           const isLoading = p.key === "sam" && !p.eval && !gptError;
           const hasError = p.key === "sam" && gptError;
           return (
@@ -1515,7 +1688,7 @@ function AIPersonasBar({ gptEval, gptError }) {
                           lineHeight: 1.5,
                         }}
                       >
-                        "{p.eval.executiveSummary}"
+                        &ldquo;{p.eval.executiveSummary}&rdquo;
                       </p>
                     )}
                   </div>
@@ -1527,13 +1700,13 @@ function AIPersonasBar({ gptEval, gptError }) {
       </div>
 
       {/* Consensus bar — only when both results available */}
-      {gptEval && <ConsensusBar claudeEval={null} gptEval={gptEval} />}
+      {gptEval && <ConsensusBar gptEval={gptEval} />}
     </div>
   );
 }
 
 // ─── Consensus Score ──────────────────────────────────────────────────────────
-function ConsensusBar({ gptEval }) {
+function ConsensusBar({ gptEval }: { gptEval: Evaluation | null }) {
   if (!gptEval) return null;
 
   // Agreement is shown at the bottom of AIPersonasBar — this is a separate block
@@ -1543,45 +1716,39 @@ function ConsensusBar({ gptEval }) {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function AutoMarkBusinessValidator() {
-  const [step, setStep] = useState("input");
-  const [substep, setSubstep] = useState("");
-
-  const savedDraft = useMemo(() => {
+  const [step, setStep] = useState<Step>("input");
+  const savedDraft = useMemo<FormState | null>(() => {
+    if (typeof window === "undefined") return null;
     try {
-      return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+      const rawDraft = window.localStorage.getItem(DRAFT_KEY);
+      if (!rawDraft) return null;
+      const parsed = JSON.parse(rawDraft) as unknown;
+      return isFormState(parsed) ? parsed : null;
     } catch {
       return null;
     }
   }, []);
 
-  const [form, setForm] = useState(
-    savedDraft || {
-      appName: "",
-      description: "",
-      audience: "",
-      budget: "",
-      revenue: "",
-    },
-  );
+  const [form, setForm] = useState<FormState>(savedDraft || EMPTY_FORM);
   const [optionsVisible, setOptionsVisible] = useState(
     !!(savedDraft?.audience || savedDraft?.budget || savedDraft?.revenue),
   );
 
-  const [evaluation, setEval] = useState(null);
-  const [gptEval, setGptEval] = useState(null); // OpenAI parallel result
+  const [evaluation, setEval] = useState<Evaluation | null>(null);
+  const [gptEval, setGptEval] = useState<Evaluation | null>(null); // OpenAI parallel result
   const [gptError, setGptError] = useState(""); // non-fatal if GPT fails
   const [htmlOutput, setHTML] = useState("");
-  const [uiTab, setUiTab] = useState("preview");
+  const [uiTab, setUiTab] = useState<UiTab>("preview");
   const [error, setError] = useState("");
-  const [costRuns, setCostRuns] = useState([]);
-  const [ctaState, setCtaState] = useState("idle");
+  const [costRuns, setCostRuns] = useState<CostRun[]>([]);
+  const [ctaState, setCtaState] = useState<CTAState>("idle");
 
   const runningRef = useRef(false);
 
-  const copyToClipboard = useCallback(async (text) => {
+  const copyToClipboard = useCallback(async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-    } catch (_) {
+    } catch {
       const ta = document.createElement("textarea");
       ta.value = text;
       ta.style.position = "fixed";
@@ -1593,7 +1760,7 @@ export default function AutoMarkBusinessValidator() {
     }
   }, []);
 
-  const addCost = useCallback((label, usage, isGPT = false) => {
+  const addCost = useCallback((label: string, usage: Usage, isGPT = false) => {
     const cost = isGPT ? calcGPTCost(usage) : calcCost(usage);
     const tokens = isGPT
       ? (usage.prompt_tokens || 0) + (usage.completion_tokens || 0)
@@ -1607,24 +1774,29 @@ export default function AutoMarkBusinessValidator() {
     ]);
   }, []);
 
-  const set = (k) => (e) => {
-    const updated = { ...form, [k]: e.target.value };
-    setForm(updated);
-    try {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(updated));
-    } catch {}
-    if ((k === "appName" || k === "description") && e.target.value.length > 0) {
-      setOptionsVisible(true);
-    }
-  };
+  const set =
+    (k: keyof FormState) =>
+    (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const updated = { ...form, [k]: e.target.value };
+      setForm(updated);
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(updated));
+      } catch {}
+      if ((k === "appName" || k === "description") && e.target.value.length > 0) {
+        setOptionsVisible(true);
+      }
+    };
 
-  const trimmedForm = {
-    appName: form.appName.trim(),
-    description: form.description.trim(),
-    audience: form.audience.trim(),
-    budget: form.budget.trim(),
-    revenue: form.revenue.trim(),
-  };
+  const trimmedForm = useMemo<FormState>(
+    () => ({
+      appName: form.appName.trim(),
+      description: form.description.trim(),
+      audience: form.audience.trim(),
+      budget: form.budget.trim(),
+      revenue: form.revenue.trim(),
+    }),
+    [form],
+  );
 
   const runAgent1 = async () => {
     if (!trimmedForm.appName || !trimmedForm.description) return;
@@ -1651,7 +1823,7 @@ Revenue model: ${trimmedForm.revenue || "Open to suggestions"}`;
 
     // Claude is required — if it fails, abort
     if (claudeResult.status === "rejected") {
-      setError("Agent 1 failed: " + claudeResult.reason.message);
+      setError("Agent 1 failed: " + getErrorMessage(claudeResult.reason));
       setStep("input");
       runningRef.current = false;
       return;
@@ -1664,7 +1836,7 @@ Revenue model: ${trimmedForm.revenue || "Open to suggestions"}`;
       const parsed = parseAgentJSON(text);
       setEval(normalizeEval(parsed));
     } catch (e) {
-      setError("Agent 1 failed: " + e.message);
+      setError("Agent 1 failed: " + getErrorMessage(e));
       setStep("input");
       runningRef.current = false;
       return;
@@ -1678,10 +1850,10 @@ Revenue model: ${trimmedForm.revenue || "Open to suggestions"}`;
         const gptParsed = parseAgentJSON(gptText);
         setGptEval(normalizeEval(gptParsed));
       } catch (e) {
-        setGptError("GPT-4o parse error: " + e.message);
+        setGptError("GPT-4o parse error: " + getErrorMessage(e));
       }
     } else {
-      setGptError("GPT-4o unavailable: " + gptResult.reason.message);
+      setGptError("GPT-4o unavailable: " + getErrorMessage(gptResult.reason));
     }
 
     setStep("done1");
@@ -1695,7 +1867,9 @@ Revenue model: ${trimmedForm.revenue || "Open to suggestions"}`;
 
     setStep("agent2");
     setError("");
-    setCostRuns((prev) => prev.filter((r) => r.label === "Agent 1 — Evaluate"));
+    setCostRuns((prev) =>
+      prev.filter((r) => !r.label.includes("UI (Sonnet 4.5)")),
+    );
 
     const userMsg = `Design the core screen for this mobile app:
 
@@ -1728,10 +1902,9 @@ Design the MOST COMPELLING screen that shows this app's core value. Make it stun
       setStep("done2");
       setUiTab("preview");
     } catch (e) {
-      setError("Agent 2 failed: " + e.message);
+      setError("Agent 2 failed: " + getErrorMessage(e));
       setStep("done1");
     } finally {
-      setSubstep("");
       runningRef.current = false;
     }
   };
@@ -1739,14 +1912,7 @@ Design the MOST COMPELLING screen that shows this app's core value. Make it stun
   const reset = () => {
     if (runningRef.current) return;
     setStep("input");
-    setSubstep("");
-    setForm({
-      appName: "",
-      description: "",
-      audience: "",
-      budget: "",
-      revenue: "",
-    });
+    setForm({ ...EMPTY_FORM });
     setOptionsVisible(false);
     setEval(null);
     setGptEval(null);
@@ -1763,12 +1929,6 @@ Design the MOST COMPELLING screen that shows this app's core value. Make it stun
   const [stitchCopied, setStitchCopied] = useState(false);
   const [pdfCopied, setPdfSaving] = useState(false);
 
-  const vColor =
-    evaluation?.verdict === "GO"
-      ? "var(--primary)"
-      : evaluation?.verdict === "NO-GO"
-        ? "#ff4444"
-        : "var(--secondary)";
   const vlColor =
     evaluation?.verdictLabel === "STRONG GO"
       ? "var(--primary)"
@@ -1777,7 +1937,7 @@ Design the MOST COMPELLING screen that shows this app's core value. Make it stun
         : evaluation?.verdictLabel === "HIGH RISK"
           ? "var(--secondary)"
           : "#ff4444";
-  const riskColor = (r) =>
+  const riskColor = (r: RiskLevel | CompetitionRisk) =>
     r === "Low"
       ? "var(--primary)"
       : r === "Medium"
@@ -1856,7 +2016,7 @@ CONSTRAINTS:
     setCtaState(canRun1 ? "ready" : "idle");
   }, [canRun1, step]);
 
-  const inputStyle = {
+  const inputStyle: CSSProperties = {
     width: "100%",
     background: "#0d0d0d",
     border: "1px solid #2c2c2c",
@@ -1869,7 +2029,7 @@ CONSTRAINTS:
     boxSizing: "border-box",
     transition: "border-color 0.2s, box-shadow 0.2s",
   };
-  const labelStyle = {
+  const labelStyle: CSSProperties = {
     display: "block",
     color: "#666",
     fontSize: 10,
@@ -1877,14 +2037,14 @@ CONSTRAINTS:
     textTransform: "uppercase",
     marginBottom: 7,
   };
-  const secTitle = {
+  const secTitle: CSSProperties = {
     color: "#777",
     fontSize: 10,
     letterSpacing: 2,
     textTransform: "uppercase",
     marginBottom: 7,
   };
-  const btnPrimary = {
+  const btnPrimary: CSSProperties = {
     background: "var(--primary)",
     color: "#000",
     border: "none",
@@ -1896,7 +2056,7 @@ CONSTRAINTS:
     letterSpacing: 2,
     cursor: "pointer",
   };
-  const btnGhost = {
+  const btnGhost: CSSProperties = {
     background: "none",
     border: "1px solid #1e1e1e",
     color: "#444",
@@ -1954,10 +2114,11 @@ CONSTRAINTS:
           };
 
   // Budget gap detection
-  const hasBudgetGap =
+  const hasBudgetGap = Boolean(
     evaluation &&
-    evaluation.budgetAssessment.gap !== "none" &&
-    evaluation.budgetAssessment.gap !== "";
+      evaluation.budgetAssessment.gap !== "none" &&
+      evaluation.budgetAssessment.gap !== "",
+  );
 
   return (
     <div
@@ -2211,13 +2372,13 @@ CONSTRAINTS:
                     letterSpacing: 0.5,
                     transition: "border-color 0.15s, color 0.15s",
                   }}
-                  onMouseEnter={(e) => {
-                    e.target.style.borderColor = "var(--primary)66";
-                    e.target.style.color = "var(--primary)";
+                  onMouseEnter={(e: ReactMouseEvent<HTMLButtonElement>) => {
+                    e.currentTarget.style.borderColor = "var(--primary)66";
+                    e.currentTarget.style.color = "var(--primary)";
                   }}
-                  onMouseLeave={(e) => {
-                    e.target.style.borderColor = "#2a2a2a";
-                    e.target.style.color = "#555";
+                  onMouseLeave={(e: ReactMouseEvent<HTMLButtonElement>) => {
+                    e.currentTarget.style.borderColor = "#2a2a2a";
+                    e.currentTarget.style.color = "#555";
                   }}
                 >
                   {ex.name}
@@ -2453,6 +2614,8 @@ CONSTRAINTS:
         {/* ════ RESULTS ════ */}
         {(step === "done1" || step === "done2") && evaluation && (
           <div>
+            <CostBar runs={costRuns} />
+
             {/* ── Save PDF button ── */}
             <div
               className="no-print"
@@ -2560,7 +2723,7 @@ CONSTRAINTS:
                     paddingLeft: 12,
                   }}
                 >
-                  "{evaluation.executiveSummary}"
+                  &ldquo;{evaluation.executiveSummary}&rdquo;
                 </p>
               )}
 
@@ -3088,7 +3251,7 @@ CONSTRAINTS:
                       ].map((t) => (
                         <button
                           key={t.id}
-                          onClick={() => setUiTab(t.id)}
+                          onClick={() => setUiTab(t.id as UiTab)}
                           style={{
                             background: uiTab === t.id ? "#1a1a1a" : "none",
                             border: "none",
