@@ -14,7 +14,10 @@ export function SiteHeader() {
     <header className="sticky top-0 z-50 pt-4">
       <Container>
         <div className="glass-panel flex items-center justify-between rounded-full border border-outline-variant/15 px-4 py-3 sm:px-6">
-          <Link href="/" className="font-heading text-sm font-bold uppercase tracking-[0.22em] text-on-background">
+          <Link
+            href="/"
+            className="font-heading text-sm font-bold uppercase tracking-[0.22em] text-on-background"
+          >
             {siteConfig.shortName}
           </Link>
 
@@ -30,8 +33,18 @@ export function SiteHeader() {
             ))}
           </nav>
 
-          <div className="hidden md:block">
-            <ButtonLink href="/#book-call" className="min-h-10 px-5 py-2 text-sm">
+          <div className="hidden items-center gap-3 md:flex">
+            <ButtonLink
+              href="/business-validator"
+              variant="secondary"
+              className="min-h-10 px-5 py-2 text-sm"
+            >
+              Business Validator
+            </ButtonLink>
+            <ButtonLink
+              href="/#book-call"
+              className="min-h-10 px-5 py-2 text-sm"
+            >
               Book a Call
             </ButtonLink>
           </div>
@@ -45,14 +58,19 @@ export function SiteHeader() {
             <span className="sr-only">Menu</span>
             <div className="space-y-1.5">
               <span className="block h-px w-4 bg-current" />
-              <span className={cn("block h-px w-4 bg-current", isOpen && "translate-x-1")} />
+              <span
+                className={cn(
+                  "block h-px w-4 bg-current",
+                  isOpen && "translate-x-1",
+                )}
+              />
               <span className="block h-px w-4 bg-current" />
             </div>
           </button>
         </div>
 
         {isOpen ? (
-          <div className="glass-panel mt-3 rounded-[2rem] border border-outline-variant/15 p-6 md:hidden">
+          <div className="glass-panel mt-3 rounded-4xl border border-outline-variant/15 p-6 md:hidden">
             <div className="flex flex-col gap-5">
               {navigation.map((item) => (
                 <Link
@@ -64,6 +82,9 @@ export function SiteHeader() {
                   {item.label}
                 </Link>
               ))}
+              <ButtonLink href="/business-validator" className="mt-2 w-full">
+                Business Validator
+              </ButtonLink>
               <ButtonLink href="/#book-call" className="mt-2 w-full">
                 Book a Call
               </ButtonLink>
