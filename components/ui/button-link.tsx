@@ -33,7 +33,7 @@ export function ButtonLink({
       target={target}
       rel={rel}
       className={cn(
-        "inline-flex min-h-12 items-center justify-center rounded-full px-6 py-3 font-semibold tracking-[-0.03em] sm:min-h-14 sm:px-8",
+        "inline-flex min-h-11 items-center justify-center rounded-full px-5 py-2.5 text-sm font-semibold tracking-[-0.03em] sm:min-h-12 sm:px-6 sm:text-base lg:min-h-14 lg:px-8",
         variantClasses[variant],
         className,
       )}

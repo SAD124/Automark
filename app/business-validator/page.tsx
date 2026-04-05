@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   useState,
   useRef,
@@ -11,6 +12,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
+import { motion } from "framer-motion";
 
 type ClaudeUsage = {
   input_tokens?: number;
@@ -110,6 +112,7 @@ type CostRun = {
 type Step = "input" | "agent1" | "done1" | "agent2" | "done2";
 type UiTab = "preview" | "code";
 type CTAState = "idle" | "ready" | "running";
+type OpenMenu = "audience" | "budget" | "revenue" | null;
 type ApiError = Error & { status?: number };
 
 const EMPTY_FORM: FormState = {
@@ -170,6 +173,7 @@ function calcCost(usage?: ClaudeUsage) {
 
 // ─── Prompts ──────────────────────────────────────────────────────────────────
 
+// Agent 1 prompt
 const AGENT1_SYSTEM = `You are a brutally honest startup evaluation agent for AutoMark, a studio that rapidly launches money-making mobile apps.
 
 Your job is to give founders the truth they need — not the encouragement they want. Be specific, quantified, and ruthless where necessary. Do not soften bad news.
@@ -615,6 +619,130 @@ const EXAMPLE_IDEAS = [
   },
 ];
 
+const TARGET_AUDIENCE_OPTIONS = [
+  "Enterprise AI / B2B",
+  "Founders / Startups",
+  "Freelancers / Solopreneurs",
+  "Agencies / Service Businesses",
+  "Creators / Influencers",
+  "Developers / Technical Teams",
+  "Healthcare / Clinics",
+  "Finance / Fintech",
+];
+
+const AUDIENCE_PILL_OPTIONS = [
+  {
+    label: "Enterprise",
+    detail: "Complex buying committees, longer contracts, and high-value operational pain.",
+  },
+  {
+    label: "SMBs",
+    detail: "Lean teams that need fast ROI, simple onboarding, and practical automation wins.",
+  },
+  {
+    label: "Founders",
+    detail: "Early-stage operators seeking speed, leverage, and proof of demand before scaling.",
+  },
+  {
+    label: "Freelancers",
+    detail: "Solo operators optimizing time, client throughput, and repeatable delivery systems.",
+  },
+  {
+    label: "Creators",
+    detail: "Audience-led businesses focused on engagement, monetization, and content velocity.",
+  },
+  {
+    label: "Developers",
+    detail: "Technical users who care about workflow fit, integrations, and implementation depth.",
+  },
+  {
+    label: "Agencies",
+    detail: "Service teams looking to productize execution and improve margin per client account.",
+  },
+  {
+    label: "Students",
+    detail: "Price-sensitive learners responding to accessibility, habit loops, and clear outcomes.",
+  },
+] as const;
+
+const BUDGET_OPTIONS = [
+  "$500 - $2k",
+  "$2k - $5k",
+  "$5k - $10k",
+  "$10k - $25k",
+  "$25k - $50k",
+  "$50k - $100k+",
+];
+
+const REVENUE_MODEL_OPTIONS = [
+  {
+    label: "Monthly SaaS subscription",
+    detail: "Recurring monthly plans for ongoing access and features.",
+  },
+  {
+    label: "Freemium + paid upgrade",
+    detail: "Free entry point with premium unlocks for power users.",
+  },
+  {
+    label: "One-time purchase",
+    detail: "Single upfront payment for a focused offer or toolkit.",
+  },
+  {
+    label: "Usage-based pricing",
+    detail: "Charge by actions, credits, API calls, or generated output.",
+  },
+  {
+    label: "Lead generation / agency upsell",
+    detail: "Use the app to convert traffic into service revenue.",
+  },
+  {
+    label: "Marketplace commission",
+    detail: "Take a percentage on transactions between buyers and sellers.",
+  },
+  {
+    label: "Advertising / sponsorship",
+    detail: "Monetize attention with placements, sponsors, or brand deals.",
+  },
+];
+
+const FRAMEWORK_POINTS = [
+  {
+    code: "M",
+    title: "Market Saturation Analysis",
+    description:
+      "Signal scanning across direct competitors, substitutes, and adjacent workflow tools to expose positioning risk fast.",
+  },
+  {
+    code: "E",
+    title: "Economic Viability",
+    description:
+      "Budget realism, monetization pressure, and break-even logic synthesized into a founder-grade commercial readout.",
+  },
+  {
+    code: "T",
+    title: "Technical Feasibility",
+    description:
+      "Execution complexity, dependency bottlenecks, and AI leverage mapped before the build path gets expensive.",
+  },
+];
+
+function parseAudienceTokens(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function mergeAudienceToken(tokens: string[], nextToken: string) {
+  if (!nextToken) return tokens;
+  if (tokens.includes(nextToken)) return tokens;
+  return [...tokens, nextToken];
+}
+
+function removeAudienceToken(tokens: string[], token: string) {
+  return tokens.filter((item) => item !== token);
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 // Benchmark context per metric
@@ -647,7 +775,8 @@ function ProgressBar({
   benchmark?: Benchmark;
 }) {
   const safe = isNaN(value) ? 5 : value;
-  const pct = (safe / 10) * 100;
+  const adjusted = invert ? Math.max(0, 11 - safe) : safe;
+  const pct = Math.round((adjusted / 10) * 100);
   const isGood = invert ? safe <= 4 : safe >= 7;
   const isMid = invert ? safe <= 7 : safe >= 4;
   const color = isGood
@@ -668,134 +797,58 @@ function ProgressBar({
       : safe >= 4
         ? "Moderate"
         : "Weak signal";
+  const radius = 38;
+  const circumference = 2 * Math.PI * radius;
+  const strokeOffset = circumference - (pct / 100) * circumference;
   return (
-    <div style={{ marginBottom: 18 }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          marginBottom: 5,
-          alignItems: "baseline",
-        }}
-      >
-        <span style={{ color: "#888", fontSize: 12 }}>{label}</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ color: "#444", fontSize: 10 }}>{contextLabel}</span>
-          <span
-            style={{
-              color,
-              fontSize: 12,
-              fontFamily: "monospace",
-              fontWeight: 700,
-            }}
-          >
-            {safe}/10
+    <div
+      className="grid justify-items-center gap-2 text-center"
+      data-metric={metricKey}
+    >
+      <div className="relative h-24 w-24">
+        <svg
+          viewBox="0 0 96 96"
+          className="h-24 w-24"
+          aria-hidden="true"
+        >
+          <circle
+            cx="48"
+            cy="48"
+            r={radius}
+            fill="none"
+            stroke="rgba(255,255,255,0.08)"
+            strokeWidth="6"
+          />
+          <circle
+            cx="48"
+            cy="48"
+            r={radius}
+            fill="none"
+            stroke={color}
+            strokeWidth="6"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeOffset}
+            transform="rotate(-90 48 48)"
+          />
+        </svg>
+        <div className="absolute inset-0 grid place-items-center">
+          <span className="font-heading text-[18px] tracking-[-0.05em] text-[#f2f6f4]">
+            {pct}%
           </span>
         </div>
       </div>
-      <div
-        style={{
-          background: "#1a1a1a",
-          borderRadius: 2,
-          height: 4,
-          position: "relative",
-        }}
-      >
-        <div
-          style={{
-            width: `${pct}%`,
-            background: color,
-            height: 4,
-            borderRadius: 2,
-            transition: "width 1.2s ease",
-          }}
-        />
-        {bmPct !== null && (
-          <div
-            style={{
-              position: "absolute",
-              left: `${bmPct}%`,
-              top: -2,
-              width: 1,
-              height: 8,
-              background: "#333",
-            }}
-            title="Industry benchmark"
-          />
-        )}
-      </div>
+      <p className="m-0 text-[10px] uppercase tracking-[0.14em] text-[#9aa7a2]">
+        {label}
+      </p>
+      <p className="m-0 text-[10px] text-[#778580]">{contextLabel}</p>
       {bm && (
         <div
-          style={{
-            color: "#555",
-            fontSize: 9,
-            marginTop: 3,
-            letterSpacing: 0.5,
-          }}
+          className="max-w-[15ch] text-center text-[9px] leading-[1.5] text-[#62706b]"
+          title="Industry benchmark"
         >
           {bm.label}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Chip({
-  label,
-  value,
-  highlight,
-  sub,
-  warn,
-}: {
-  label: string;
-  value: string;
-  highlight?: string;
-  sub?: string;
-  warn?: boolean;
-}) {
-  const color = highlight || "var(--primary)";
-  return (
-    <div
-      style={{
-        border: `1px solid ${warn ? "#ff444433" : color + "30"}`,
-        background: warn ? "#ff444408" : `${color}0a`,
-        borderRadius: 6,
-        padding: "10px 14px",
-        minWidth: 120,
-      }}
-    >
-      <div
-        style={{
-          color: "#555",
-          fontSize: 10,
-          letterSpacing: 1.5,
-          textTransform: "uppercase",
-          marginBottom: 4,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          color: warn ? "#ff7777" : color,
-          fontSize: 14,
-          fontWeight: 700,
-          fontFamily: "monospace",
-          wordBreak: "break-word",
-        }}
-      >
-        {value}
-      </div>
-      {sub && (
-        <div
-          style={{
-            color: warn ? "#ff444488" : "#333",
-            fontSize: 10,
-            marginTop: 4,
-            lineHeight: 1.4,
-          }}
-        >
-          {sub}
+          {bmPct !== null ? ` · ref ${Math.round(bmPct)}%` : ""}
         </div>
       )}
     </div>
@@ -804,18 +857,7 @@ function Chip({
 
 function Tag({ children }: { children: ReactNode }) {
   return (
-    <span
-      style={{
-        background: "#111",
-        border: "1px solid #222",
-        color: "#777",
-        fontSize: 11,
-        padding: "3px 9px",
-        borderRadius: 4,
-        display: "inline-block",
-        marginBottom: 4,
-      }}
-    >
+    <span className="mb-1 inline-block rounded-[4px] border border-[#2f3936] bg-[#111] px-[9px] py-[3px] text-[11px] text-[#b1beb9]">
       {children}
     </span>
   );
@@ -825,106 +867,48 @@ function CollapsibleSection({
   title,
   summary,
   content,
+  supplementary,
+  defaultOpen = false,
 }: {
   title: string;
   summary: string;
   content: string;
+  supplementary?: ReactNode;
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const [hovered, setHovered] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div
-      style={{
-        borderLeft: `2px solid ${open ? "var(--primary)44" : "#1e1e1e"}`,
-        paddingLeft: 18,
-        marginBottom: 16,
-        transition: "border-color 0.2s",
-      }}
-    >
+    <div className="border border-white/8 bg-white/[0.02]">
       <button
+        type="button"
         onClick={() => setOpen((o) => !o)}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        style={{
-          background: open
-            ? "var(--primary)08"
-            : hovered
-              ? "#ffffff05"
-              : "none",
-          border: `1px solid ${open ? "var(--primary)22" : hovered ? "#2a2a2a" : "transparent"}`,
-          cursor: "pointer",
-          width: "100%",
-          textAlign: "left",
-          padding: "7px 10px",
-          borderRadius: 5,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          transition: "background 0.15s, border-color 0.15s",
-          marginLeft: -10,
-        }}
+        className="flex w-full items-center justify-between gap-4 bg-transparent px-[18px] py-4 text-left text-[#edf2ef]"
+        title={summary}
       >
-        <span
-          style={{
-            color: open ? "#ccc" : hovered ? "#aaa" : "#777",
-            fontSize: 10,
-            letterSpacing: 2,
-            textTransform: "uppercase",
-            transition: "color 0.15s",
-          }}
-        >
-          {title}
-        </span>
-        <span
-          style={{
-            color: open ? "var(--primary)" : hovered ? "#aaa" : "#666",
-            fontSize: 10,
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            transition: "color 0.15s",
-          }}
-        >
+        <span className="text-[11px] uppercase tracking-[0.16em]">{title}</span>
+        <span className="text-[20px] leading-none text-[#87948f]" aria-hidden="true">
           <span
-            style={{
-              display: "inline-block",
-              transform: open ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform 0.2s",
-            }}
+            className={`inline-block text-[20px] leading-none transition-transform duration-200 ${
+              open ? "rotate-45 text-[var(--primary)]" : ""
+            }`}
           >
             ▼
           </span>
-          <span>{open ? "collapse" : "expand"}</span>
         </span>
       </button>
-      {/* Always-visible one-line summary when collapsed */}
-      {!open && summary && (
-        <p
-          style={{
-            color: "#666",
-            fontSize: 12,
-            marginTop: 7,
-            lineHeight: 1.6,
-            fontStyle: "italic",
-          }}
-        >
-          {summary}
-        </p>
-      )}
-      {/* Full content when expanded */}
-      {open && (
-        <p
-          style={{
-            color: "#bbb",
-            fontSize: 13,
-            lineHeight: 1.9,
-            marginTop: 10,
-            whiteSpace: "pre-wrap",
-          }}
-        >
+      {!open && summary ? (
+        <p className="m-0 px-[18px] pb-4 text-[12px] leading-[1.65] text-[#8c9994]">{summary}</p>
+      ) : null}
+      {open ? (
+        <div className="grid gap-[14px] px-[18px] pb-[18px]">
+          <p className="m-0 whitespace-pre-wrap text-[13px] leading-[1.82] text-[#d9e1de]">
           {content || "—"}
         </p>
-      )}
+          {supplementary ? (
+            <div className="grid gap-3 border-t border-white/6 pt-1 md:grid-cols-2">{supplementary}</div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1154,7 +1138,7 @@ function Spinner({
   );
 }
 
-function CostBar({ runs }: { runs: CostRun[] }) {
+/* function CostBar({ runs }: { runs: CostRun[] }) {
   if (!runs.length) return null;
   const total = runs.reduce((s, r) => s + r.cost, 0);
   const totalTokens = runs.reduce((s, r) => s + r.tokens, 0);
@@ -1286,7 +1270,7 @@ function CostBar({ runs }: { runs: CostRun[] }) {
       </div>
     </div>
   );
-}
+} */
 
 function PhonePreview({ html }: { html: string }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -1491,10 +1475,13 @@ const vlColorFn = (label: VerdictLabel) =>
         ? "var(--secondary)"
         : "#ff4444";
 
-function AIPersonasBar({
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function AIPersonasBarLegacy({
+  claudeEval,
   gptEval,
   gptError,
 }: {
+  claudeEval?: Evaluation;
   gptEval: Evaluation | null;
   gptError: string;
 }) {
@@ -1504,7 +1491,7 @@ function AIPersonasBar({
       name: "Dario Amodei",
       title: "CEO · Anthropic",
       accent: "var(--primary)",
-      eval: null as Evaluation | null,
+      eval: claudeEval || null,
       tag: "CLAUDE",
     },
     {
@@ -1518,100 +1505,159 @@ function AIPersonasBar({
   ];
 
   return (
-    <div
-      style={{ borderTop: "1px solid #161616", marginTop: 16, paddingTop: 14 }}
-    >
-      <div
-        style={{
-          color: "#666",
-          fontSize: 9,
-          letterSpacing: 2,
-          textTransform: "uppercase",
-          marginBottom: 10,
-        }}
-      >
+    <div className="mt-4 border-t border-[#161616] pt-[14px]">
+      <div className="mb-[10px] text-[9px] uppercase tracking-[0.2em] text-[#666]">
         DUAL AI ANALYSIS
       </div>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+      <div className="grid gap-3 xl:grid-cols-2">
         {personas.map((p) => {
           const isLoading = p.key === "sam" && !p.eval && !gptError;
-          const hasError = p.key === "sam" && gptError;
+          const hasError = p.key === "sam" && Boolean(gptError);
+          const cardEval = p.eval;
+          const quote = cardEval?.executiveSummary
+            ? `"${cardEval.executiveSummary}"`
+            : isLoading
+              ? "Running secondary model review against the same market brief."
+              : hasError
+                ? gptError
+                    .replace("GPT-4o unavailable: ", "")
+                    .replace("GPT-4o parse error: ", "")
+                : "No secondary take available yet.";
           return (
             <div
               key={p.key}
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 10,
-                background: "#0f0f0f",
-                border: `1px solid ${p.accent}33`,
-                borderRadius: 8,
-                padding: "12px 14px",
-                flex: "1 1 220px",
-              }}
+              className="relative min-h-[168px] overflow-hidden border bg-[#141414] px-[18px] pb-[16px] pt-[15px]"
+              style={{ borderColor: `${p.accent}26` }}
             >
-              {/* Photo */}
+              <div className="pointer-events-none absolute inset-y-0 right-[56px] w-px bg-white/5" />
               <div
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: "50%",
-                  flexShrink: 0,
-                  border: `2px solid ${p.accent}55`,
-                  overflow: "hidden",
-                  background: "#111",
-                  boxShadow: `0 0 12px ${p.accent}22`,
-                }}
+                className="pointer-events-none absolute right-[18px] top-[18px] flex h-9 w-9 items-center justify-center border border-white/8 bg-white/[0.02]"
+                aria-hidden="true"
               >
-                <CeoAvatar
-                  name={p.name}
-                  accent={p.accent}
-                  src={CEO_PHOTOS[p.key]}
-                />
+                <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/35" fill="none">
+                  <path
+                    d="M12 3l6 3v5c0 4.1-2.3 7.2-6 10-3.7-2.8-6-5.9-6-10V6l6-3z"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                  />
+                </svg>
               </div>
-
-              {/* Info + verdict */}
-              <div style={{ flex: 1, minWidth: 0 }}>
+              {/* Photo */}
+              <div className="flex min-w-0 items-start gap-3">
                 <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    marginBottom: 3,
-                  }}
+                  className="h-11 w-11 shrink-0 overflow-hidden rounded-full border-2 bg-[#111]"
+                  style={{ borderColor: `${p.accent}55` }}
                 >
-                  <div
-                    style={{ color: "#e0e0e0", fontSize: 12, fontWeight: 600 }}
-                  >
+                  <CeoAvatar
+                    name={p.name}
+                    accent={p.accent}
+                    src={CEO_PHOTOS[p.key]}
+                  />
+                </div>
+
+                {/* Info + verdict */}
+                <div className="min-w-0 flex-1">
+                  <div className="mb-[2px] text-[12px] font-semibold text-[#e0e0e0]">
                     {p.name}
                   </div>
-                  <div
-                    style={{
-                      background: `${p.accent}18`,
-                      border: `1px solid ${p.accent}33`,
-                      borderRadius: 4,
-                      padding: "1px 6px",
-                    }}
-                  >
+                  <div className="text-[10px] text-[#5e6764]">{p.title}</div>
+                </div>
+              </div>
+
+                <div className="mt-5 border-t border-white/5 pt-4">
+                  <p className="min-h-[56px] max-w-[44ch] text-[11px] leading-[1.55] text-[#8d9793]">
+                    {quote}
+                  </p>
+
+                  <div className="mt-4 flex items-end justify-between gap-4">
+                    <div className="min-w-0">
+                      {cardEval ? (
+                        <>
+                          <div
+                            className="text-[9px] uppercase tracking-[0.14em]"
+                            style={{ color: vlColorFn(cardEval.verdictLabel) }}
+                          >
+                            {cardEval.verdictLabel}
+                          </div>
+                          <div className="mt-1 text-[9px] uppercase tracking-[0.14em] text-[#7f8a86]">
+                            {p.tag}, {cardEval.confidence}% confidence
+                          </div>
+                        </>
+                      ) : isLoading ? (
+                        <>
+                          <div className="flex items-center gap-2 text-[9px] uppercase tracking-[0.14em] text-[#74b9ff]">
+                            <span className="h-[5px] w-[5px] rounded-full border border-[#74b9ff] border-t-transparent animate-spin" />
+                            Syncing model
+                          </div>
+                          <div className="mt-1 text-[9px] uppercase tracking-[0.14em] text-[#7f8a86]">
+                            {p.tag}, pending response
+                          </div>
+                        </>
+                      ) : hasError ? (
+                        <>
+                          <div className="text-[9px] uppercase tracking-[0.14em] text-[#ff8c8c]">
+                            Review interrupted
+                          </div>
+                          <div className="mt-1 text-[9px] uppercase tracking-[0.14em] text-[#7f8a86]">
+                            {p.tag}, unavailable
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+
                     <span
-                      style={{ color: p.accent, fontSize: 9, letterSpacing: 1 }}
+                      className="shrink-0 text-[8px] uppercase tracking-[0.18em]"
+                      style={{ color: p.accent }}
                     >
                       {p.tag}
                     </span>
                   </div>
                 </div>
-                <div style={{ color: "#444", fontSize: 10, marginBottom: 6 }}>
-                  {p.title}
-                </div>
 
-                {/* Claude always shows "see above" */}
-                {p.key === "dario" && (
+                <div className="hidden">
+                {p.key === "dario" && p.eval && (
+                  <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 4,
+                      }}
+                    >
+                      <span
+                        style={{
+                          color: vlColorFn(p.eval.verdictLabel),
+                          fontSize: 13,
+                          fontWeight: 800,
+                          letterSpacing: 2,
+                        }}
+                      >
+                        {p.eval.verdictLabel}
+                      </span>
+                      <span style={{ color: "#444", fontSize: 10 }}>
+                        {p.eval.confidence}%
+                      </span>
+                    </div>
+                    {p.eval.executiveSummary && (
+                      <p
+                        style={{
+                          color: "#666",
+                          fontSize: 11,
+                          fontStyle: "italic",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        &ldquo;{p.eval.executiveSummary}&rdquo;
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* GPT loading */}
+                {isLoading && (
                   <div
-                    style={{
-                      color: "var(--primary)",
-                      fontSize: 11,
-                      fontStyle: "italic",
-                    }}
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
                   >
                     ✓ Verdict shown above
                   </div>
@@ -1693,7 +1739,7 @@ function AIPersonasBar({
                     )}
                   </div>
                 )}
-              </div>
+                </div>
             </div>
           );
         })}
@@ -1706,6 +1752,532 @@ function AIPersonasBar({
 }
 
 // ─── Consensus Score ──────────────────────────────────────────────────────────
+function AIPersonasBar({
+  claudeEval,
+  gptEval,
+  gptError,
+}: {
+  claudeEval?: Evaluation;
+  gptEval: Evaluation | null;
+  gptError: string;
+}) {
+  const cleanGptError = gptError
+    .replace("GPT-4o unavailable: ", "")
+    .replace("GPT-4o parse error: ", "");
+  const personas = [
+    {
+      key: "dario" as PersonaKey,
+      name: "Dario Amodei",
+      title: "CEO · Anthropic",
+      accent: "var(--primary)",
+      eval: claudeEval || null,
+      tag: "CLAUDE",
+    },
+    {
+      key: "sam" as PersonaKey,
+      name: "Sam Altman",
+      title: "CEO · OpenAI",
+      accent: "#74b9ff",
+      eval: gptEval,
+      tag: "GPT-4o",
+    },
+  ];
+  const [activePersonaKey, setActivePersonaKey] = useState<PersonaKey | null>(
+    claudeEval ? "dario" : gptEval || gptError ? "sam" : null,
+  );
+  const activePersona =
+    personas.find((persona) => persona.key === activePersonaKey) || null;
+  const activeEval = activePersona?.eval || null;
+  const activeLoading =
+    activePersona?.key === "sam" && !activePersona.eval && !gptError;
+  const activeError = activePersona?.key === "sam" && Boolean(gptError);
+  const memoSignals =
+    activeEval?.keyDrivers && activeEval.keyDrivers.length > 0
+      ? activeEval.keyDrivers.slice(0, 3)
+      : activeEval?.founderRealityCheck?.slice(0, 3) || [];
+  const memoRisks =
+    activeEval?.killShots && activeEval.killShots.length > 0
+      ? activeEval.killShots.slice(0, 3)
+      : activeEval?.founderRealityCheck?.slice(0, 3) || [];
+  const scoreImprovers =
+    activeEval?.founderRealityCheck && activeEval.founderRealityCheck.length > 0
+      ? activeEval.founderRealityCheck.slice(0, 3)
+      : activeEval?.dependencies?.slice(0, 3) ||
+        (activeEval?.additionalInsights ? [activeEval.additionalInsights] : []);
+  const recommendedMoves: Array<{ label: string; value: string }> = [];
+
+  if (activeEval?.devApproach) {
+    recommendedMoves.push({
+      label: "Build track",
+      value: activeEval.devApproach,
+    });
+  }
+  if (activeEval?.monetizationStrategy) {
+    recommendedMoves.push({
+      label: "Revenue track",
+      value: activeEval.monetizationStrategy,
+    });
+  }
+  if (activeEval?.marketingApproach) {
+    recommendedMoves.push({
+      label: "Distribution track",
+      value: activeEval.marketingApproach,
+    });
+  }
+
+  return (
+    <div
+      style={{ borderTop: "1px solid #161616", marginTop: 16, paddingTop: 14 }}
+    >
+      <div
+        style={{
+          color: "#666",
+          fontSize: 9,
+          letterSpacing: 2,
+          textTransform: "uppercase",
+          marginBottom: 10,
+        }}
+      >
+        DUAL AI ANALYSIS
+      </div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        {personas.map((p) => {
+          const isLoading = p.key === "sam" && !p.eval && !gptError;
+          const hasError = p.key === "sam" && Boolean(gptError);
+          const isActive = activePersonaKey === p.key;
+          return (
+            <button
+              key={p.key}
+              type="button"
+              aria-pressed={isActive}
+              onClick={() =>
+                setActivePersonaKey((current) =>
+                  current === p.key ? null : p.key,
+                )
+              }
+              style={{
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                flex: "1 1 220px",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  background: "#0f0f0f",
+                  border: `1px solid ${isActive ? `${p.accent}66` : `${p.accent}33`}`,
+                  borderRadius: 8,
+                  padding: "12px 14px",
+                  minHeight: 136,
+                  boxShadow: isActive ? `0 0 0 1px ${p.accent}14` : "none",
+                  transition: "border-color 180ms ease, box-shadow 180ms ease",
+                }}
+              >
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: "50%",
+                  flexShrink: 0,
+                  border: `2px solid ${p.accent}55`,
+                  overflow: "hidden",
+                  background: "#111",
+                  boxShadow: `0 0 12px ${p.accent}22`,
+                }}
+              >
+                <CeoAvatar
+                  name={p.name}
+                  accent={p.accent}
+                  src={CEO_PHOTOS[p.key]}
+                />
+              </div>
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 3,
+                  }}
+                >
+                  <div
+                    style={{ color: "#e0e0e0", fontSize: 12, fontWeight: 600 }}
+                  >
+                    {p.name}
+                  </div>
+                  <div
+                    style={{
+                      background: `${p.accent}18`,
+                      border: `1px solid ${p.accent}33`,
+                      borderRadius: 4,
+                      padding: "1px 6px",
+                    }}
+                  >
+                    <span
+                      style={{ color: p.accent, fontSize: 9, letterSpacing: 1 }}
+                    >
+                      {p.tag}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ color: "#444", fontSize: 10, marginBottom: 6 }}>
+                  {p.title}
+                </div>
+
+                {p.key === "dario" && p.eval && (
+                  <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 4,
+                      }}
+                    >
+                      <span
+                        style={{
+                          color: vlColorFn(p.eval.verdictLabel),
+                          fontSize: 13,
+                          fontWeight: 800,
+                          letterSpacing: 2,
+                        }}
+                      >
+                        {p.eval.verdictLabel}
+                      </span>
+                      <span style={{ color: "#444", fontSize: 10 }}>
+                        {p.eval.confidence}%
+                      </span>
+                    </div>
+                    {p.eval.executiveSummary && (
+                      <p
+                        style={{
+                          color: "#666",
+                          fontSize: 11,
+                          fontStyle: "italic",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        &ldquo;{p.eval.executiveSummary}&rdquo;
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {isLoading && (
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  >
+                    <div
+                      style={{
+                        width: 5,
+                        height: 5,
+                        borderRadius: "50%",
+                        border: `1px solid ${p.accent}`,
+                        borderTop: `1px solid transparent`,
+                        animation: "spin 0.9s linear infinite",
+                      }}
+                    />
+                    <span style={{ color: "#444", fontSize: 11 }}>
+                      Analyzing…
+                    </span>
+                  </div>
+                )}
+
+                {hasError && (
+                  <div
+                    style={{
+                      color: "#ff444488",
+                      fontSize: 10,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    ⚠ {cleanGptError}
+                  </div>
+                )}
+
+                {p.key === "sam" && p.eval && (
+                  <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 4,
+                      }}
+                    >
+                      <span
+                        style={{
+                          color: vlColorFn(p.eval.verdictLabel),
+                          fontSize: 13,
+                          fontWeight: 800,
+                          letterSpacing: 2,
+                        }}
+                      >
+                        {p.eval.verdictLabel}
+                      </span>
+                      <span style={{ color: "#444", fontSize: 10 }}>
+                        {p.eval.confidence}%
+                      </span>
+                    </div>
+                    {p.eval.executiveSummary && (
+                      <p
+                        style={{
+                          color: "#666",
+                          fontSize: 11,
+                          fontStyle: "italic",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        &ldquo;{p.eval.executiveSummary}&rdquo;
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    marginTop: 10,
+                    color: isActive ? p.accent : "#5c6763",
+                    fontSize: 9,
+                    letterSpacing: 1.3,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {isActive ? "Hide memo" : "Open memo"}
+                </div>
+              </div>
+            </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {activePersona && (
+        <motion.div
+          key={`${activePersona.key}-${activeEval?.verdictLabel || "pending"}`}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: "easeOut" }}
+          className="mt-4 border border-white/8 bg-[linear-gradient(180deg,rgba(17,17,17,0.96)_0%,rgba(11,11,11,0.96)_100%)] px-[18px] pb-[18px] pt-[16px] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+        >
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-white/6 pb-[12px]">
+            <div>
+              <div className="text-[9px] uppercase tracking-[0.2em] text-[#6f7c78]">
+                Model memo / click a card to switch perspective
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="text-[13px] font-semibold text-[#e7ece9]">
+                  {activePersona.name}
+                </span>
+                <span className="text-[10px] text-[#697571]">
+                  {activePersona.title}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-[10px]">
+              <span
+                className="border px-[9px] py-[4px] text-[9px] uppercase tracking-[0.16em]"
+                style={{
+                  color: activePersona.accent,
+                  borderColor: `${activePersona.accent}33`,
+                  background: `${activePersona.accent}12`,
+                }}
+              >
+                {activePersona.tag}
+              </span>
+              {activeEval ? (
+                <>
+                  <span
+                    className="text-[10px] uppercase tracking-[0.16em]"
+                    style={{ color: vlColorFn(activeEval.verdictLabel) }}
+                  >
+                    {activeEval.verdictLabel}
+                  </span>
+                  <span className="text-[10px] uppercase tracking-[0.16em] text-[#74807c]">
+                    {activeEval.confidence}% confidence
+                  </span>
+                </>
+              ) : activeLoading ? (
+                <span className="text-[10px] uppercase tracking-[0.16em] text-[#74b9ff]">
+                  Pending response
+                </span>
+              ) : activeError ? (
+                <span className="text-[10px] uppercase tracking-[0.16em] text-[#ff9c9c]">
+                  Unavailable
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          {activeLoading ? (
+            <div className="grid gap-3 text-[12px] leading-[1.7] text-[#8e9b96]">
+              <p className="m-0">
+                GPT-4o is still reviewing the same market brief. The memo will
+                populate here as soon as the secondary model returns a verdict.
+              </p>
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-[#74b9ff]">
+                <span className="h-[6px] w-[6px] rounded-full border border-[#74b9ff] border-t-transparent animate-spin" />
+                Synchronizing model perspective
+              </div>
+            </div>
+          ) : activeError ? (
+            <div className="grid gap-3 text-[12px] leading-[1.7] text-[#b68c8c]">
+              <p className="m-0">
+                This model memo is unavailable for the current run.
+              </p>
+              <p className="m-0 text-[#8e9b96]">{cleanGptError}</p>
+            </div>
+          ) : activeEval ? (
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div className="grid gap-4">
+                <section className="border border-white/6 bg-white/[0.02] px-[14px] py-[13px]">
+                  <div className="text-[9px] uppercase tracking-[0.18em] text-[#6f7c78]">
+                    Executive summary
+                  </div>
+                  <p className="mt-2 text-[13px] leading-[1.75] text-[#e5ebe8]">
+                    {activeEval.executiveSummary || "No executive summary provided."}
+                  </p>
+                </section>
+
+                <section className="border border-white/6 bg-white/[0.02] px-[14px] py-[13px]">
+                  <div className="text-[9px] uppercase tracking-[0.18em] text-[#6f7c78]">
+                    Why this verdict
+                  </div>
+                  <p className="mt-2 text-[12px] leading-[1.75] text-[#95a39e]">
+                    {activeEval.verdictReason || "No rationale provided."}
+                  </p>
+                </section>
+
+                <section className="border border-white/6 bg-white/[0.02] px-[14px] py-[13px]">
+                  <div className="text-[9px] uppercase tracking-[0.18em] text-[#6f7c78]">
+                    Recommended next move
+                  </div>
+                  <div className="mt-3 grid gap-3">
+                    {recommendedMoves.length > 0 ? (
+                      recommendedMoves.map((move) => (
+                        <div
+                          key={move.label}
+                          className="grid gap-1 border-t border-white/6 pt-3 first:border-t-0 first:pt-0"
+                        >
+                          <div className="text-[10px] uppercase tracking-[0.14em] text-[#dce3e0]">
+                            {move.label}
+                          </div>
+                          <div className="text-[12px] leading-[1.7] text-[#8e9b96]">
+                            {move.value}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-[12px] leading-[1.7] text-[#8e9b96]">
+                        No follow-up action was returned for this model.
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+
+              <div className="grid gap-4">
+                <section className="border border-white/6 bg-white/[0.02] px-[14px] py-[13px]">
+                  <div className="text-[9px] uppercase tracking-[0.18em] text-[#6f7c78]">
+                    Key signals detected
+                  </div>
+                  <div className="mt-3 grid gap-3">
+                    {memoSignals.length > 0 ? (
+                      memoSignals.map((item, index) => (
+                        <div
+                          key={`${item}-${index}`}
+                          className="grid grid-cols-[18px_minmax(0,1fr)] gap-3"
+                        >
+                          <span className="text-[10px] uppercase tracking-[0.16em] text-[#5e6a66]">
+                            {String(index + 1).padStart(2, "0")}
+                          </span>
+                          <span className="text-[12px] leading-[1.7] text-[#8e9b96]">
+                            {item}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-[12px] leading-[1.7] text-[#8e9b96]">
+                        No signal summary was returned for this model.
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="border border-white/6 bg-white/[0.02] px-[14px] py-[13px]">
+                  <div className="text-[9px] uppercase tracking-[0.18em] text-[#6f7c78]">
+                    Primary risks
+                  </div>
+                  <div className="mt-3 grid gap-3">
+                    {memoRisks.length > 0 ? (
+                      memoRisks.map((item, index) => (
+                        <div
+                          key={`${item}-${index}`}
+                          className="grid grid-cols-[18px_minmax(0,1fr)] gap-3"
+                        >
+                          <span className="text-[10px] uppercase tracking-[0.16em] text-[#7a6661]">
+                            {String(index + 1).padStart(2, "0")}
+                          </span>
+                          <span className="text-[12px] leading-[1.7] text-[#b09191]">
+                            {item}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-[12px] leading-[1.7] text-[#8e9b96]">
+                        No structural risks were surfaced by this model.
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="border border-white/6 bg-white/[0.02] px-[14px] py-[13px]">
+                  <div className="text-[9px] uppercase tracking-[0.18em] text-[#6f7c78]">
+                    What would improve the score
+                  </div>
+                  <div className="mt-3 grid gap-3">
+                    {scoreImprovers.length > 0 ? (
+                      scoreImprovers.map((item, index) => (
+                        <div
+                          key={`${item}-${index}`}
+                          className="grid grid-cols-[18px_minmax(0,1fr)] gap-3"
+                        >
+                          <span className="text-[10px] uppercase tracking-[0.16em] text-[#5e6a66]">
+                            +
+                          </span>
+                          <span className="text-[12px] leading-[1.7] text-[#8e9b96]">
+                            {item}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-[12px] leading-[1.7] text-[#8e9b96]">
+                        No improvement guidance was returned for this model.
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+            </div>
+          ) : (
+            <div className="text-[12px] leading-[1.7] text-[#8e9b96]">
+              No memo is available for this card yet.
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {gptEval && <ConsensusBar gptEval={gptEval} />}
+    </div>
+  );
+}
+
 function ConsensusBar({ gptEval }: { gptEval: Evaluation | null }) {
   if (!gptEval) return null;
 
@@ -1715,24 +2287,97 @@ function ConsensusBar({ gptEval }: { gptEval: Evaluation | null }) {
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
+function ProtocolWireframeVisual() {
+  const lines = [
+    { x1: 20, y1: 170, x2: 160, y2: 18 },
+    { x1: 60, y1: 170, x2: 210, y2: 36 },
+    { x1: 100, y1: 170, x2: 244, y2: 24 },
+    { x1: 140, y1: 170, x2: 274, y2: 52 },
+    { x1: 180, y1: 170, x2: 304, y2: 40 },
+    { x1: 220, y1: 170, x2: 334, y2: 72 },
+    { x1: 260, y1: 170, x2: 360, y2: 62 },
+    { x1: 20, y1: 128, x2: 360, y2: 22 },
+    { x1: 20, y1: 84, x2: 360, y2: 110 },
+    { x1: 30, y1: 36, x2: 344, y2: 170 },
+    { x1: 96, y1: 14, x2: 244, y2: 170 },
+    { x1: 170, y1: 16, x2: 122, y2: 170 },
+  ];
+
+  return (
+    <div className="protocol-visual-frame">
+      <motion.div
+        className="protocol-visual-glow"
+        animate={{ opacity: [0.24, 0.58, 0.24], scale: [0.98, 1.03, 0.98] }}
+        transition={{
+          duration: 6,
+          repeat: Number.POSITIVE_INFINITY,
+          ease: "easeInOut",
+        }}
+      />
+      <svg viewBox="0 0 380 190" className="protocol-visual-svg" aria-hidden>
+        <defs>
+          <linearGradient id="wirefade" x1="0%" x2="100%" y1="0%" y2="100%">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.05)" />
+            <stop offset="52%" stopColor="rgba(255,255,255,0.44)" />
+            <stop offset="100%" stopColor="rgba(79,219,202,0.18)" />
+          </linearGradient>
+        </defs>
+        {lines.map((line, index) => (
+          <motion.line
+            key={`${line.x1}-${line.y1}-${index}`}
+            x1={line.x1}
+            y1={line.y1}
+            x2={line.x2}
+            y2={line.y2}
+            stroke="url(#wirefade)"
+            strokeWidth="1.15"
+            initial={{ opacity: 0.2 }}
+            animate={{ opacity: [0.18, 0.64, 0.18] }}
+            transition={{
+              duration: 4.5 + (index % 4),
+              repeat: Number.POSITIVE_INFINITY,
+              ease: "easeInOut",
+              delay: index * 0.18,
+            }}
+          />
+        ))}
+        {[44, 96, 160, 224, 286, 334].map((cx, index) => (
+          <motion.circle
+            key={cx}
+            cx={cx}
+            cy={36 + (index % 3) * 34}
+            r="2"
+            fill="rgba(79,219,202,0.78)"
+            animate={{ opacity: [0.35, 1, 0.35], scale: [1, 1.8, 1] }}
+            transition={{
+              duration: 3.4,
+              repeat: Number.POSITIVE_INFINITY,
+              delay: index * 0.22,
+              ease: "easeInOut",
+            }}
+          />
+        ))}
+      </svg>
+      <motion.div
+        className="protocol-scan-line"
+        animate={{ y: ["-10%", "108%"] }}
+        transition={{
+          duration: 3.8,
+          repeat: Number.POSITIVE_INFINITY,
+          ease: "linear",
+        }}
+      />
+    </div>
+  );
+}
+
 export default function AutoMarkBusinessValidator() {
   const [step, setStep] = useState<Step>("input");
-  const savedDraft = useMemo<FormState | null>(() => {
-    if (typeof window === "undefined") return null;
-    try {
-      const rawDraft = window.localStorage.getItem(DRAFT_KEY);
-      if (!rawDraft) return null;
-      const parsed = JSON.parse(rawDraft) as unknown;
-      return isFormState(parsed) ? parsed : null;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const [form, setForm] = useState<FormState>(savedDraft || EMPTY_FORM);
-  const [optionsVisible, setOptionsVisible] = useState(
-    !!(savedDraft?.audience || savedDraft?.budget || savedDraft?.revenue),
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [deploymentSpeed, setDeploymentSpeed] = useState(
+    "Standard (60s Execution)",
   );
+  const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
 
   const [evaluation, setEval] = useState<Evaluation | null>(null);
   const [gptEval, setGptEval] = useState<Evaluation | null>(null); // OpenAI parallel result
@@ -1740,10 +2385,13 @@ export default function AutoMarkBusinessValidator() {
   const [htmlOutput, setHTML] = useState("");
   const [uiTab, setUiTab] = useState<UiTab>("preview");
   const [error, setError] = useState("");
-  const [costRuns, setCostRuns] = useState<CostRun[]>([]);
+  const [, setCostRuns] = useState<CostRun[]>([]);
   const [ctaState, setCtaState] = useState<CTAState>("idle");
 
   const runningRef = useRef(false);
+  const audienceMenuRef = useRef<HTMLDivElement | null>(null);
+  const budgetMenuRef = useRef<HTMLDivElement | null>(null);
+  const revenueMenuRef = useRef<HTMLDivElement | null>(null);
 
   const copyToClipboard = useCallback(async (text: string) => {
     try {
@@ -1776,15 +2424,8 @@ export default function AutoMarkBusinessValidator() {
 
   const set =
     (k: keyof FormState) =>
-    (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      const updated = { ...form, [k]: e.target.value };
-      setForm(updated);
-      try {
-        localStorage.setItem(DRAFT_KEY, JSON.stringify(updated));
-      } catch {}
-      if ((k === "appName" || k === "description") && e.target.value.length > 0) {
-        setOptionsVisible(true);
-      }
+    (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+      updateFormValue(k, e.target.value);
     };
 
   const trimmedForm = useMemo<FormState>(
@@ -1796,6 +2437,97 @@ export default function AutoMarkBusinessValidator() {
       revenue: form.revenue.trim(),
     }),
     [form],
+  );
+
+  useEffect(() => {
+    try {
+      const rawDraft = window.localStorage.getItem(DRAFT_KEY);
+      if (!rawDraft) return;
+
+      const parsed = JSON.parse(rawDraft) as unknown;
+      if (!isFormState(parsed)) return;
+
+      setForm(parsed);
+    } catch {
+      // Ignore malformed drafts and fall back to a clean form.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!openMenu) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const insideAudience =
+        audienceMenuRef.current?.contains(target) ?? false;
+      const insideBudget = budgetMenuRef.current?.contains(target) ?? false;
+      const insideRevenue = revenueMenuRef.current?.contains(target) ?? false;
+
+      if (insideAudience || insideBudget || insideRevenue) return;
+
+      setOpenMenu(null);
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [openMenu]);
+
+  const persistDraft = useCallback((updated: FormState) => {
+    setForm(updated);
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(updated));
+    } catch {}
+  }, []);
+
+  const updateFormValue = useCallback(
+    (key: keyof FormState, value: string) => {
+      persistDraft({ ...form, [key]: value });
+    },
+    [form, persistDraft],
+  );
+
+  const selectedAudiencePills = useMemo(
+    () => parseAudienceTokens(form.audience),
+    [form.audience],
+  );
+
+  const primaryAudienceSelection = useMemo(
+    () =>
+      TARGET_AUDIENCE_OPTIONS.find((option) =>
+        selectedAudiencePills.includes(option),
+      ) ?? "",
+    [selectedAudiencePills],
+  );
+
+  const selectedRevenueOption = useMemo(
+    () =>
+      REVENUE_MODEL_OPTIONS.find((option) => option.label === form.revenue) ??
+      null,
+    [form.revenue],
+  );
+
+  const addAudienceFromSelect = useCallback(
+    (value: string) => {
+      if (!value) return;
+      const remaining = selectedAudiencePills.filter(
+        (token) => !TARGET_AUDIENCE_OPTIONS.includes(token),
+      );
+      const merged = [value, ...remaining];
+      updateFormValue("audience", merged.join(", "));
+      setOpenMenu(null);
+    },
+    [selectedAudiencePills, updateFormValue],
+  );
+
+  const toggleAudiencePill = useCallback(
+    (value: string) => {
+      const next = selectedAudiencePills.includes(value)
+        ? removeAudienceToken(selectedAudiencePills, value)
+        : mergeAudienceToken(selectedAudiencePills, value);
+
+      updateFormValue("audience", next.join(", "));
+    },
+    [selectedAudiencePills, updateFormValue],
   );
 
   const runAgent1 = async () => {
@@ -1812,8 +2544,9 @@ export default function AutoMarkBusinessValidator() {
     const msg = `App: ${trimmedForm.appName}
 What it does: ${trimmedForm.description}
 Audience: ${trimmedForm.audience || "General mobile users"}
-Budget: ${trimmedForm.budget || "$0 bootstrap"}
-Revenue model: ${trimmedForm.revenue || "Open to suggestions"}`;
+Execution speed: ${deploymentSpeed}
+Budget: ${trimmedForm.budget || BUDGET_OPTIONS[1] || "$0 bootstrap"}
+Revenue model: ${trimmedForm.revenue || REVENUE_MODEL_OPTIONS[0]?.label || "Open to suggestions"}`;
 
     // ── Run Claude + GPT-4o in parallel ──────────────────────────────────────
     const [claudeResult, gptResult] = await Promise.allSettled([
@@ -1913,7 +2646,8 @@ Design the MOST COMPELLING screen that shows this app's core value. Make it stun
     if (runningRef.current) return;
     setStep("input");
     setForm({ ...EMPTY_FORM });
-    setOptionsVisible(false);
+    setDeploymentSpeed("Standard (60s Execution)");
+    setOpenMenu(null);
     setEval(null);
     setGptEval(null);
     setGptError("");
@@ -1927,16 +2661,7 @@ Design the MOST COMPELLING screen that shows this app's core value. Make it stun
   };
 
   const [stitchCopied, setStitchCopied] = useState(false);
-  const [pdfCopied, setPdfSaving] = useState(false);
 
-  const vlColor =
-    evaluation?.verdictLabel === "STRONG GO"
-      ? "var(--primary)"
-      : evaluation?.verdictLabel === "CAUTIOUS GO"
-        ? "#a8ff78"
-        : evaluation?.verdictLabel === "HIGH RISK"
-          ? "var(--secondary)"
-          : "#ff4444";
   const riskColor = (r: RiskLevel | CompetitionRisk) =>
     r === "Low"
       ? "var(--primary)"
@@ -1950,15 +2675,16 @@ Design the MOST COMPELLING screen that shows this app's core value. Make it stun
   const isRunning = ["agent1", "agent2"].includes(step);
 
   // ── Save as PDF ─────────────────────────────────────────────────────────────
-  const savePDF = useCallback(() => {
+  /* const savePDF = useCallback(() => {
     setPdfSaving(true);
     // Add print title
     const prevTitle = document.title;
     document.title = `${trimmedForm.appName} — AutoMark Evaluation`;
+    document.title = `${trimmedForm.appName} — Automark AI Evaluation`;
     window.print();
     document.title = prevTitle;
     setTimeout(() => setPdfSaving(false), 1500);
-  }, [trimmedForm.appName]);
+  }, [trimmedForm.appName]); */
 
   // ── Google Stitch prompt ─────────────────────────────────────────────────────
   const buildStitchPrompt = useCallback(() => {
@@ -2023,22 +2749,15 @@ CONSTRAINTS:
     borderRadius: 6,
     color: "#e8e8e8",
     padding: "11px 14px",
-    fontFamily: "'IBM Plex Mono',monospace",
-    fontSize: 13,
+    fontFamily: "var(--font-body), sans-serif",
+    fontSize: 14,
     outline: "none",
     boxSizing: "border-box",
     transition: "border-color 0.2s, box-shadow 0.2s",
   };
   const labelStyle: CSSProperties = {
     display: "block",
-    color: "#666",
-    fontSize: 10,
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    marginBottom: 7,
-  };
-  const secTitle: CSSProperties = {
-    color: "#777",
+    color: "#9eaca7",
     fontSize: 10,
     letterSpacing: 2,
     textTransform: "uppercase",
@@ -2059,7 +2778,7 @@ CONSTRAINTS:
   const btnGhost: CSSProperties = {
     background: "none",
     border: "1px solid #1e1e1e",
-    color: "#444",
+    color: "#a2afab",
     borderRadius: 6,
     padding: "13px 22px",
     fontFamily: "inherit",
@@ -2107,7 +2826,7 @@ CONSTRAINTS:
             fontSize: 13,
             letterSpacing: 2,
             background: "#111",
-            color: "#333",
+            color: "#7e8a86",
             border: "1px solid #222",
             cursor: "not-allowed",
             boxShadow: "none",
@@ -2119,24 +2838,130 @@ CONSTRAINTS:
       evaluation.budgetAssessment.gap !== "none" &&
       evaluation.budgetAssessment.gap !== "",
   );
-
+  const primaryAudienceDisplay =
+    primaryAudienceSelection ||
+    selectedAudiencePills[0] ||
+    parseAudienceTokens(trimmedForm.audience)[0] ||
+    "General audience";
+  const competitionDensity =
+    evaluation?.scores.competitionRisk === "High"
+      ? "High Density"
+      : evaluation?.scores.competitionRisk === "Medium"
+        ? "Moderate Density"
+        : "Low Density";
+  const commercialBlocks = evaluation
+    ? [
+        {
+          label: "Launch cost",
+          value:
+            evaluation.budgetAssessment.realistic || evaluation.scores.launchCost,
+          sub: hasBudgetGap
+            ? `Budget gap ${evaluation.budgetAssessment.gap}`
+            : evaluation.budgetAssessment.note || "AI-assisted build estimate",
+          warn: hasBudgetGap,
+        },
+        {
+          label: "Time to revenue",
+          value: evaluation.scores.timeToRevenue,
+          sub: "Estimated path to first paying customer",
+        },
+        {
+          label: "Competition density",
+          value: competitionDensity,
+          sub:
+            evaluation.scores.competitionRisk === "High"
+              ? "Funded incumbents and crowded alternatives"
+              : evaluation.scores.competitionRisk === "Medium"
+                ? "Comparable products already condition demand"
+                : "Room to own a sharper market wedge",
+          highlight: riskColor(evaluation.scores.competitionRisk),
+        },
+      ]
+    : [];
+  const financialModelRows = evaluation
+    ? [
+        {
+          metric: "Break-even users",
+          targetValue: "1,250 unit",
+          probability:
+            evaluation.confidence >= 70
+              ? "Likely"
+              : evaluation.confidence >= 50
+                ? "Moderate"
+                : "Stretch",
+          accent:
+            evaluation.confidence >= 70
+              ? "var(--primary)"
+              : evaluation.confidence >= 50
+                ? "var(--secondary)"
+                : "#d49a74",
+        },
+        {
+          metric: "MRR target",
+          targetValue: "$12,400.00",
+          probability:
+            evaluation.confidence >= 76
+              ? "Likely"
+              : evaluation.confidence >= 58
+                ? "Moderate"
+                : "Stretch",
+          accent:
+            evaluation.confidence >= 76
+              ? "var(--primary)"
+              : evaluation.confidence >= 58
+                ? "var(--secondary)"
+                : "#d49a74",
+        },
+        {
+          metric: "Time to break-even",
+          targetValue: "7.2 Months",
+          probability:
+            evaluation.riskLevel === "Low"
+              ? "Likely"
+              : evaluation.riskLevel === "Medium"
+                ? "Moderate"
+                : "Stretch",
+          accent:
+            evaluation.riskLevel === "Low"
+              ? "var(--primary)"
+              : evaluation.riskLevel === "Medium"
+                ? "var(--secondary)"
+                : "#d49a74",
+        },
+        {
+          metric: "Year 1 revenue",
+          targetValue: "$140k-$210k",
+          probability:
+            evaluation.riskLevel === "Low"
+              ? "Moderate"
+              : evaluation.riskLevel === "Medium"
+                ? "Moderate"
+                : "Stretch",
+          accent:
+            evaluation.riskLevel === "Critical"
+              ? "#d49a74"
+              : evaluation.riskLevel === "High"
+                ? "#d49a74"
+                : "var(--secondary)",
+        },
+      ]
+    : [];
   return (
     <div
       style={{
         minHeight: "100vh",
         background: "#080808",
-        color: "#d8d8d8",
-        fontFamily: "'IBM Plex Mono','Courier New',monospace",
+        color: "#eef3f1",
+        fontFamily: "var(--font-body), sans-serif",
       }}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&display=swap');
         * { box-sizing: border-box; }
-        input:focus, textarea:focus {
+        input:focus, textarea:focus, select:focus {
           border-color: var(--primary) !important;
           box-shadow: 0 0 0 2px rgba(0,255,157,0.12), 0 0 12px rgba(0,255,157,0.08) !important;
         }
-        input::placeholder, textarea::placeholder { color: #3a3a3a; }
+        input::placeholder, textarea::placeholder { color: #5a6662; opacity: 1; }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 4px; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -2173,13 +2998,250 @@ CONSTRAINTS:
         .dot2 { animation: dot-bounce 1.4s ease-in-out 0.2s infinite; }
         .dot3 { animation: dot-bounce 1.4s ease-in-out 0.4s infinite; }
         .reality-item { animation: reality-in 0.3s ease forwards; }
+        .pipeline-shell { display: flex; flex-direction: column; gap: 40px; }
+        .pipeline-hero { max-width: 820px; }
+        .validator-topbar { border-bottom: 1px solid rgba(79,219,202,0.1); background:
+          linear-gradient(180deg, rgba(12,12,12,0.96) 0%, rgba(9,9,9,0.92) 100%),
+          radial-gradient(circle at top left, rgba(79,219,202,0.1), transparent 34%);
+          backdrop-filter: blur(16px);
+          box-shadow: 0 10px 40px rgba(0,0,0,0.28); }
+        .validator-brand-lockup { display: flex; align-items: center; gap: 12px; min-width: 0; }
+        .validator-brand-mark { width: 32px; height: 32px; border-radius: 10px; position: relative; display: grid; place-items: center; border: 1px solid rgba(79,219,202,0.24); background: linear-gradient(180deg, rgba(79,219,202,0.12), rgba(79,219,202,0.03)); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 10px 26px rgba(0,0,0,0.22); }
+        .validator-brand-mark::before, .validator-brand-mark::after { content: ""; position: absolute; border-radius: 999px; background: rgba(79,219,202,0.42); }
+        .validator-brand-mark::before { width: 16px; height: 1px; }
+        .validator-brand-mark::after { width: 1px; height: 16px; }
+        .validator-brand-core { width: 8px; height: 8px; border-radius: 999px; background: var(--primary); box-shadow: 0 0 14px rgba(79,219,202,0.65); }
+        .validator-brand-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; text-decoration: none; }
+        .validator-brand-kicker { color: #7b8884; font-size: 9px; letter-spacing: 0.24em; text-transform: uppercase; }
+        .validator-brand-title { color: #f5f6f5; font-size: 13px; letter-spacing: 0.16em; font-weight: 700; font-family: var(--font-heading), sans-serif; white-space: nowrap; }
+        .validator-brand-divider { color: #41504d; font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; }
+        .validator-brand-pill { padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(79,219,202,0.18); background: rgba(79,219,202,0.06); color: #cfe6df; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; white-space: nowrap; }
+        .validator-step { display: inline-flex; align-items: center; gap: 8px; padding: 8px 11px; border-radius: 999px; border: 1px solid rgba(56,65,63,0.8); background: rgba(16,16,16,0.8); transition: border-color 0.18s, background 0.18s, transform 0.18s; }
+        .validator-step-line { color: #475451; font-size: 10px; letter-spacing: 0.18em; }
+        .validator-step-dot { width: 7px; height: 7px; border-radius: 999px; background: #394441; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03); }
+        .validator-step-label { font-size: 10px; letter-spacing: 0.15em; color: #8b9793; text-transform: uppercase; white-space: nowrap; }
+        .validator-step.is-past { border-color: rgba(79,219,202,0.28); background: rgba(79,219,202,0.06); }
+        .validator-step.is-past .validator-step-dot { background: var(--primary); box-shadow: 0 0 10px rgba(79,219,202,0.4); }
+        .validator-step.is-past .validator-step-label { color: #d7ebe5; }
+        .validator-step.is-active { border-color: rgba(79,219,202,0.55); background: linear-gradient(180deg, rgba(79,219,202,0.13), rgba(79,219,202,0.05)); box-shadow: 0 0 20px rgba(79,219,202,0.1); transform: translateY(-1px); }
+        .validator-step.is-active .validator-step-dot { background: var(--primary); box-shadow: 0 0 12px rgba(79,219,202,0.45); }
+        .validator-step.is-active .validator-step-label { color: #ffffff; }
+        .validator-reset { background: rgba(14,14,14,0.9) !important; border: 1px solid rgba(79,219,202,0.18) !important; color: #d3ddd9 !important; border-radius: 999px !important; transition: transform 0.18s, border-color 0.18s, background 0.18s; }
+        .validator-reset:not(:disabled):hover { transform: translateY(-1px); border-color: rgba(79,219,202,0.42) !important; background: rgba(79,219,202,0.08) !important; }
+        .pipeline-kicker-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 18px; }
+        .pipeline-status-row { display: inline-flex; align-items: center; gap: 10px; margin: 0; padding: 7px 12px; border-radius: 999px; border: 1px solid rgba(79,219,202,0.18); background: rgba(79,219,202,0.05); }
+        .pipeline-status-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--primary); box-shadow: 0 0 14px rgba(79,219,202,0.55); }
+        .pipeline-status-label, .pipeline-micro-label, .pipeline-token-label { color: #96a29e; font-size: 10px; text-transform: uppercase; letter-spacing: 0.22em; }
+        .pipeline-status-badge { padding: 7px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02); color: #b8c4c0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.18em; }
+        .pipeline-hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 280px); gap: 24px; align-items: end; }
+        .pipeline-hero-copy { max-width: 640px; }
+        .pipeline-title { margin: 0 0 16px; line-height: 0.9; max-width: 11ch; display: flex; flex-direction: column; align-items: flex-start; }
+        .pipeline-title-main { display: block; }
+        .pipeline-title-accent { display: block; margin-top: 8px; padding-left: clamp(18px, 3vw, 42px); color: var(--primary); }
+        .pipeline-lead { max-width: 620px; margin: 0; color: #b7c4c0; }
+        .pipeline-hero-tags { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+        .pipeline-hero-tag { padding: 8px 12px; border-radius: 999px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); color: #d7e1de; font-size: 11px; letter-spacing: 0.08em; }
+        .pipeline-hero-card { padding: 18px 18px 16px; border-radius: 14px; border: 1px solid rgba(79,219,202,0.14); background: linear-gradient(180deg, rgba(19,21,21,0.96) 0%, rgba(12,12,12,0.9) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), 0 18px 40px rgba(0,0,0,0.2); }
+        .pipeline-hero-card-label { color: #7f8a87; font-size: 10px; text-transform: uppercase; letter-spacing: 0.2em; }
+        .pipeline-hero-card-value { margin: 8px 0 18px; font-size: 28px; line-height: 0.95; font-family: var(--font-heading), sans-serif; color: #f5f7f6; letter-spacing: -0.06em; }
+        .pipeline-hero-card-value span { color: var(--primary); }
+        .pipeline-hero-card-copy { margin: 0; color: #99a6a2; font-size: 12px; line-height: 1.65; }
+        .pipeline-layout { display: grid; grid-template-columns: minmax(0, 1.16fr) minmax(300px, 0.84fr); gap: 28px; align-items: start; }
+        .pipeline-form-stack, .pipeline-side-stack { display: flex; flex-direction: column; gap: 22px; }
+        .pipeline-panel { background: linear-gradient(180deg, rgba(32,31,31,0.95) 0%, rgba(23,23,23,0.95) 100%); border: 1px solid rgba(60,73,72,0.35); border-radius: 10px; box-shadow: 0 24px 60px rgba(0,0,0,0.22); }
+        .pipeline-form-panel { padding: 28px; position: relative; overflow: hidden; }
+        .pipeline-form-panel::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(135deg, rgba(79,219,202,0.08), transparent 28%, transparent 72%, rgba(79,219,202,0.05)); }
+        .pipeline-example-header { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 14px; margin-bottom: 22px; }
+        .pipeline-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+        .pipeline-chip { margin: 0 !important; border-radius: 999px !important; padding: 6px 12px !important; background: rgba(11,11,11,0.66) !important; }
+        .pipeline-field-stack { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 22px; }
+        .pipeline-field-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 7px; }
+        .pipeline-counter { color: #8d9894; font-size: 10px; font-family: monospace; }
+        .pipeline-field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+        .pipeline-select-card { background: rgba(13,13,13,0.72); border: 1px solid rgba(60,73,72,0.34); border-radius: 8px; padding: 14px 15px; }
+        .pipeline-select-card.is-primary { position: relative; min-height: auto; padding: 14px 15px 15px; overflow: visible; background: linear-gradient(180deg, rgba(22,24,24,0.98) 0%, rgba(13,13,13,0.98) 100%); border-color: rgba(79,219,202,0.22); box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), 0 10px 24px rgba(0,0,0,0.16); }
+        .pipeline-select-card.is-primary .pipeline-micro-label { display: block; margin-bottom: 8px; }
+        .pipeline-premium-select { position: relative; display: block; margin-top: 0; }
+        .pipeline-premium-trigger { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 22px; padding: 0; border: none; background: transparent; color: #f2f6f4; font-family: var(--font-body), sans-serif; cursor: pointer; text-align: left; }
+        .pipeline-premium-value { color: #f2f6f4; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+        .pipeline-premium-value.is-placeholder { color: #73807c; font-weight: 500; }
+        .pipeline-premium-chevron { color: #8da5a0; font-size: 13px; line-height: 1; transition: transform 0.18s ease, color 0.18s ease; }
+        .pipeline-premium-chevron.is-open { transform: rotate(180deg); color: var(--primary); }
+        .pipeline-premium-menu { position: absolute; top: calc(100% + 12px); left: 0; width: min(100%, 320px); z-index: 30; padding: 12px 14px 10px; border: 1px solid rgba(79,219,202,0.2); border-radius: 10px; background: linear-gradient(180deg, rgba(18,21,21,0.98) 0%, rgba(11,12,12,0.98) 100%); box-shadow: 0 18px 40px rgba(0,0,0,0.32); max-height: 260px; overflow-y: auto; }
+        .pipeline-premium-menu.is-end { left: auto; right: 0; }
+        .pipeline-premium-option { width: 100%; display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 11px 0; border: none; border-bottom: 1px solid rgba(79,219,202,0.08); background: transparent; color: #d9e5e1; font-family: var(--font-body), sans-serif; font-size: 13px; text-align: left; cursor: pointer; transition: color 0.18s ease, transform 0.18s ease; }
+        .pipeline-premium-option:last-child { border-bottom: none; padding-bottom: 2px; }
+        .pipeline-premium-option:hover { color: #f2f6f4; transform: translateX(2px); }
+        .pipeline-premium-option.is-active { color: var(--primary); }
+        .pipeline-premium-option-copy { display: flex; flex-direction: column; gap: 4px; }
+        .pipeline-premium-option-detail { color: #8fa09b; font-size: 11px; line-height: 1.45; }
+        .pipeline-premium-option-meta { color: #7f908b; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; }
+        .protocol-input { background: #0c0c0c !important; border: 1px solid rgba(60,73,72,0.48) !important; border-radius: 4px !important; box-shadow: inset 0 1px 0 rgba(255,255,255,0.02); }
+        .protocol-textarea { min-height: 148px !important; }
+        .protocol-select { width: 100%; margin-top: 10px; background: transparent; border: none; color: #e8e8e8; font-family: var(--font-body), sans-serif; font-size: 14px; outline: none; }
+        .pipeline-pill-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .pipeline-audience-pill { width: 100%; display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 14px 15px; text-align: left; background: linear-gradient(180deg, rgba(18,20,20,0.96) 0%, rgba(10,11,11,0.96) 100%); border: 1px solid rgba(60,73,72,0.38); color: #d9e5e1; border-radius: 14px; cursor: pointer; font-family: inherit; transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease; }
+        .pipeline-audience-pill:hover { transform: translateY(-2px); border-color: rgba(79,219,202,0.42); box-shadow: 0 12px 24px rgba(0,0,0,0.2); }
+        .pipeline-audience-pill.is-active { background: linear-gradient(180deg, rgba(20,33,31,0.98) 0%, rgba(12,20,19,0.98) 100%); border-color: rgba(79,219,202,0.6); box-shadow: inset 0 1px 0 rgba(255,255,255,0.02), 0 0 0 1px rgba(79,219,202,0.12), 0 16px 30px rgba(6,14,13,0.3); }
+        .pipeline-audience-pill-copy { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+        .pipeline-audience-pill-title { color: #f2f6f4; font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+        .pipeline-audience-pill-detail { color: #8fa09b; font-size: 11px; line-height: 1.55; }
+        .pipeline-audience-pill.is-active .pipeline-audience-pill-title { color: var(--primary); }
+        .pipeline-audience-pill.is-active .pipeline-audience-pill-detail { color: #b7d1ca; }
+        .pipeline-audience-pill-state { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; min-width: 62px; padding: 6px 9px; border-radius: 999px; border: 1px solid rgba(79,219,202,0.16); color: #7f908b; font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; background: rgba(255,255,255,0.02); }
+        .pipeline-audience-pill.is-active .pipeline-audience-pill-state { border-color: rgba(79,219,202,0.4); color: var(--primary); background: rgba(79,219,202,0.1); }
+        .pipeline-helper-copy { margin: 12px 0 0; color: #8fa09b; font-size: 11px; line-height: 1.6; }
+        .pipeline-error-card { margin-top: 4px; background: #ff444411; border: 1px solid #ff444433; border-radius: 6px; padding: 10px 14px; }
+        .pipeline-cta-wrap { position: relative; z-index: 1; margin-top: 8px; }
+        .pipeline-cta-content, .pipeline-cta-running { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+        .pipeline-cta-meta { opacity: 0.72; font-size: 11px; }
+        .pipeline-run-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #000; }
+        .pipeline-meta-note { color: #73807c; font-size: 11px; margin: 12px 0 0; letter-spacing: 0.03em; }
+        .pipeline-preview-panel { padding: 24px; }
+        .pipeline-preview-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 22px; }
+        .pipeline-preview-title, .pipeline-framework-title { margin: 0; font-family: var(--font-heading), sans-serif; color: #f2f4f3; font-size: 1.35rem; letter-spacing: -0.03em; }
+        .pipeline-preview-tag { color: #7a8480; background: rgba(53,53,52,0.92); border-radius: 999px; padding: 4px 9px; font-size: 10px; letter-spacing: 0.08em; }
+        .pipeline-metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+        .pipeline-metric-card { display: flex; flex-direction: column; gap: 10px; }
+        .pipeline-metric-line { position: relative; height: 2px; background: rgba(79,219,202,0.14); overflow: hidden; }
+        .pipeline-metric-line-fill { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, rgba(79,219,202,0.9), rgba(112,247,243,0.95)); }
+        .pipeline-metric-label { margin: 0; color: #899591; font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; }
+        .pipeline-metric-value { margin: 0; font-family: var(--font-heading), sans-serif; color: #f4f6f5; font-size: 1.8rem; letter-spacing: -0.05em; }
+        .pipeline-preview-quote { margin-top: 24px; padding: 18px 18px 18px 20px; border-left: 2px solid var(--primary); background: rgba(0,0,0,0.22); color: #abb7b3; font-size: 13px; line-height: 1.75; font-style: italic; }
+        .pipeline-fee-panel { padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; }
+        .pipeline-fee-label { color: #8f9a96; font-size: 10px; text-transform: uppercase; letter-spacing: 0.18em; }
+        .pipeline-fee-value { font-family: var(--font-heading), sans-serif; color: var(--primary); font-size: 2.2rem; font-weight: 700; letter-spacing: -0.06em; }
+        .pipeline-fee-unit { color: #8b9894; font-size: 12px; font-family: var(--font-body), sans-serif; font-weight: 500; letter-spacing: 0.02em; }
+        .pipeline-visual-card { padding: 12px; overflow: hidden; }
+        .protocol-visual-frame { position: relative; min-height: 250px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); overflow: hidden; background: linear-gradient(180deg, rgba(40,40,40,0.78) 0%, rgba(23,23,23,0.98) 100%); }
+        .protocol-visual-glow { position: absolute; inset: 14% 10%; background: radial-gradient(circle, rgba(79,219,202,0.16) 0%, rgba(79,219,202,0.04) 35%, transparent 68%); filter: blur(18px); }
+        .protocol-visual-svg { position: relative; width: 100%; height: 250px; opacity: 0.94; }
+        .protocol-scan-line { position: absolute; left: 0; right: 0; height: 1.5px; background: linear-gradient(90deg, transparent, rgba(79,219,202,0.85), transparent); box-shadow: 0 0 18px rgba(79,219,202,0.32); }
+        .pipeline-framework-card { padding: 22px 20px; }
+        .pipeline-framework-list { display: flex; flex-direction: column; gap: 18px; margin-top: 20px; }
+        .pipeline-framework-item { display: flex; gap: 14px; align-items: flex-start; }
+        .pipeline-framework-icon { width: 30px; height: 30px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 6px; background: rgba(79,219,202,0.14); border: 1px solid rgba(79,219,202,0.24); color: var(--primary); font-size: 12px; font-weight: 700; }
+        .pipeline-framework-item-title { margin: 0 0 5px; color: #f1f4f3; font-size: 15px; letter-spacing: -0.02em; }
+        .pipeline-framework-item-copy { margin: 0; color: #9ba8a4; font-size: 12px; line-height: 1.7; }
+        .pipeline-token-strip { padding: 2px 4px; }
+        .pipeline-token-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; color: #808b87; font-size: 11px; letter-spacing: 0.08em; }
+        .validator-topbar { border-bottom: 1px solid rgba(60,73,72,0.2); background: rgba(19,19,19,0.8); backdrop-filter: blur(18px); box-shadow: none; }
+        .validator-topbar-progress { border-bottom: 1px solid rgba(60,73,72,0.2); background: #0b0b0b; }
+        .validator-nav-left, .validator-nav-right { display: flex; align-items: center; }
+        .validator-nav-left { gap: 34px; }
+        .validator-logo { color: #ffffff; font-size: 1.55rem; font-weight: 700; letter-spacing: -0.05em; text-decoration: none; font-family: var(--font-heading), sans-serif; }
+        .validator-nav-links { display: flex; align-items: center; gap: 26px; }
+        .validator-nav-link { color: #aeb8b4; font-size: 12px; text-decoration: none; letter-spacing: -0.01em; padding-bottom: 6px; border-bottom: 2px solid transparent; }
+        .validator-nav-link.is-active { color: var(--primary); border-bottom-color: var(--primary); }
+        .validator-nav-right { gap: 16px; }
+        .validator-nav-button { border: none; background: var(--primary); color: #06211f; border-radius: 2px; padding: 10px 16px; font-size: 12px; font-weight: 800; letter-spacing: -0.01em; cursor: pointer; }
+        .validator-avatar { width: 34px; height: 34px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.14); background: radial-gradient(circle at 30% 30%, #4b5451, #1d1d1d 70%); display: grid; place-items: center; color: #e5ece9; font-size: 10px; letter-spacing: 0.16em; }
+        .pipeline-shell { gap: 64px; }
+        .pipeline-hero { max-width: none; display: grid; gap: 0; }
+        .pipeline-kicker-row { gap: 8px; margin-bottom: 14px; }
+        .pipeline-status-row { padding: 0; border: none; background: transparent; }
+        .pipeline-status-label { letter-spacing: 0.22em; }
+        .pipeline-status-badge { display: none; }
+        .pipeline-hero-grid { grid-template-columns: minmax(0, 1fr) minmax(220px, 280px); gap: 46px; align-items: end; }
+        .pipeline-hero-copy { max-width: 760px; }
+        .pipeline-title { margin: 0 0 24px; max-width: none; display: block; line-height: 0.92; font-size: clamp(2.8rem, 5vw, 4.6rem); letter-spacing: -0.07em; }
+        .pipeline-title-main { display: inline; }
+        .pipeline-title-accent { display: inline; margin-top: 0; padding-left: 0; color: var(--primary); }
+        .pipeline-title-tail { color: #f3f4f3; }
+        .pipeline-lead { max-width: 720px; color: #b7c4c0; font-size: 1.1rem; line-height: 1.72; }
+        .pipeline-hero-tags, .pipeline-hero-card, .pipeline-example-header, .pipeline-hidden-advanced { display: none; }
+        .pipeline-layout { grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.72fr); gap: 56px; }
+        .pipeline-form-stack, .pipeline-side-stack { gap: 30px; }
+        .pipeline-panel { border-radius: 4px; border-color: rgba(60,73,72,0.18); box-shadow: none; }
+        .pipeline-form-panel { padding: 28px 18px 18px; background: #201f1f; }
+        .pipeline-field-stack { gap: 26px; }
+        .pipeline-field-head { margin-bottom: 10px; }
+        .protocol-input { width: 100%; background: #0e0e0e !important; border: 0 !important; border-bottom: 1px solid rgba(60,73,72,0.48) !important; border-radius: 0 !important; box-shadow: none !important; padding: 18px 16px !important; font-size: 1.1rem; color: #e7e9e8; }
+        .protocol-textarea { min-height: 128px !important; }
+        .pipeline-field-grid { gap: 18px; }
+        .pipeline-select-card { padding: 14px 16px; background: #1c1b1b; border-radius: 2px; border: 1px solid rgba(60,73,72,0.16); }
+        .protocol-select { margin-top: 8px; color: #ffffff; font-size: 14px; font-weight: 500; appearance: none; }
+        .pipeline-cta-wrap { margin-top: 10px; }
+        .pipeline-cta { background: var(--primary) !important; color: #0b2320 !important; border: none !important; box-shadow: none !important; padding: 19px 22px !important; }
+        .pipeline-cta-content, .pipeline-cta-running { align-items: center; }
+        .pipeline-cta-content > span:first-child, .pipeline-cta-running { font-family: var(--font-heading), sans-serif; font-size: 1.05rem; font-weight: 700; letter-spacing: -0.02em; }
+        .pipeline-cta-meta { color: rgba(6,33,31,0.72); font-size: 13px; }
+        .pipeline-meta-note { display: none; }
+        .pipeline-preview-panel { padding: 28px 16px 16px; background: rgba(28,27,27,0.54); border-color: rgba(60,73,72,0.14); }
+        .pipeline-preview-head { margin-bottom: 18px; }
+        .pipeline-preview-title, .pipeline-framework-title { font-size: 1.9rem; letter-spacing: -0.05em; }
+        .pipeline-preview-tag { border-radius: 2px; padding: 4px 8px; }
+        .pipeline-metric-grid { gap: 24px; }
+        .pipeline-metric-value { font-size: 2rem; }
+        .pipeline-preview-quote { margin-top: 26px; padding: 16px 14px; border-left-width: 3px; background: rgba(0,0,0,0.26); font-size: 12px; line-height: 1.72; }
+        .pipeline-fee-panel { justify-self: end; width: 100%; max-width: 280px; padding: 22px 22px 20px; background: #2a2a2a; }
+        .pipeline-fee-value { font-size: 3rem; }
+        .pipeline-fee-unit { font-size: 11px; }
+        .pipeline-visual-card { padding: 6px; background: #2a2a2a; }
+        .protocol-visual-frame { min-height: 260px; border-radius: 2px; border-color: rgba(255,255,255,0.06); background: linear-gradient(180deg, rgba(55,55,55,0.48) 0%, rgba(30,30,30,0.9) 100%); }
+        .protocol-visual-glow { inset: 22% 14%; background: radial-gradient(circle, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.01) 52%, transparent 74%); filter: blur(16px); }
+        .pipeline-framework-card { padding: 10px 0 0; border: none; background: transparent; }
+        .pipeline-framework-list { gap: 28px; }
+        .pipeline-framework-item { gap: 18px; }
+        .pipeline-framework-icon { width: 40px; height: 40px; border-radius: 2px; background: #201f1f; border: none; font-size: 13px; }
+        .pipeline-framework-item-title { font-size: 1.2rem; margin-bottom: 6px; }
+        .pipeline-framework-item-copy { font-size: 13px; line-height: 1.74; }
+        .pipeline-token-strip { padding-top: 10px; border-top: 1px solid rgba(60,73,72,0.12); }
+        .pipeline-token-label { text-align: center; display: block; }
+        .pipeline-token-row { justify-content: space-between; font-family: var(--font-heading), sans-serif; font-size: 1rem; letter-spacing: -0.04em; }
+        .validator-footer { margin-top: 72px; padding: 28px 0 0; border-top: 1px solid rgba(60,73,72,0.15); display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+        .validator-footer-brand { color: #ffffff; font-size: 0.95rem; font-weight: 700; letter-spacing: -0.04em; text-transform: uppercase; }
+        .validator-footer-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 24px; }
+        .validator-footer-link, .validator-footer-copy { color: #a9b3b0; font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; text-decoration: none; }
+        @media (max-width: 1180px) {
+          .pipeline-hero-grid { grid-template-columns: 1fr; }
+          .pipeline-layout { grid-template-columns: 1fr; }
+          .pipeline-side-stack { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+          .pipeline-framework-card { grid-column: 1 / -1; }
+          .pipeline-token-strip { grid-column: 1 / -1; }
+        }
+        @media (max-width: 960px) {
+          .g2 { grid-template-columns: 1fr !important; gap: 16px !important; }
+          .chips { flex-wrap: wrap !important; gap: 8px !important; }
+          .chips > div { flex: 1 1 calc(50% - 8px) !important; min-width: min(100%, 220px) !important; }
+          .tbar { padding: 10px 20px !important; flex-wrap: wrap; gap: 10px; }
+          .tbar > div:first-child { min-width: 0; flex: 1 1 auto; }
+          .psteps { width: 100%; justify-content: flex-start; overflow-x: auto; padding-top: 4px; }
+          .mpad { padding: 34px 20px !important; }
+          .pipeline-shell { gap: 28px; }
+          .validator-brand-divider { display: none; }
+          .pipeline-field-grid { grid-template-columns: 1fr; }
+          .pipeline-side-stack { grid-template-columns: 1fr; }
+          .pipeline-metric-grid { grid-template-columns: 1fr; }
+          .pipeline-preview-head { flex-direction: column; align-items: flex-start; }
+          .pipeline-cta-content, .pipeline-cta-running { flex-direction: column; align-items: flex-start; }
+          .validator-hero-title { font-size: clamp(2.1rem, 5vw, 2.5rem) !important; }
+          .validator-hero-lead { font-size: 14px !important; line-height: 1.65 !important; }
+          .validator-cta { max-width: 100% !important; padding: 14px 22px !important; font-size: 12px !important; letter-spacing: 1.8px !important; }
+          .pscale{ transform: scale(0.84) !important; transform-origin: top center !important; margin-bottom: -110px !important; }
+        }
         @media (max-width: 600px) {
-          .g2    { grid-template-columns: 1fr !important; }
+          .g2 { grid-template-columns: 1fr !important; }
           .chips { flex-wrap: wrap !important; }
+          .chips > div { flex-basis: 100% !important; min-width: 0 !important; }
           .psteps{ display: none !important; }
-          .tbar  { padding: 10px 16px !important; }
-          .mpad  { padding: 28px 16px !important; }
-          .pscale{ transform: scale(0.72) !important; transform-origin: top center !important; margin-bottom: -220px !important; }
+          .tbar  { padding: 10px 14px !important; gap: 8px; }
+          .tbar > div:first-child { gap: 8px !important; }
+          .validator-brand-pill { display: none; }
+          .mpad  { padding: 24px 14px !important; }
+          .pipeline-form-panel, .pipeline-preview-panel, .pipeline-framework-card { padding: 20px 16px; }
+          .pipeline-fee-panel { padding: 16px; }
+          .pipeline-title { line-height: 1; }
+          .pipeline-title-accent { padding-left: 0; }
+          .pipeline-pill-grid { grid-template-columns: 1fr; gap: 8px; }
+          .pipeline-chip-row { gap: 6px; }
+          .protocol-visual-frame, .protocol-visual-svg { min-height: 210px; height: 210px; }
+          .validator-hero-title { font-size: 1.95rem !important; }
+          .validator-hero-lead { font-size: 13px !important; }
+          .validator-cta { padding: 13px 18px !important; font-size: 11px !important; letter-spacing: 1.5px !important; }
+          .validator-reset { padding: 5px 10px !important; font-size: 9px !important; }
+          .example-chip { padding: 4px 8px !important; font-size: 10px !important; }
+          .pscale{ transform: scale(0.68) !important; transform-origin: top center !important; margin-bottom: -240px !important; }
         }
         @media print {
           body { background: #fff !important; color: #111 !important; }
@@ -2192,417 +3254,625 @@ CONSTRAINTS:
       `}</style>
 
       {/* ── Top bar ── */}
-      <div
-        className="tbar"
-        style={{
-          borderBottom: "1px solid #161616",
-          padding: "11px 28px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          background: "#0b0b0b",
-          position: "sticky",
-          top: 0,
-          zIndex: 100,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div
-            style={{
-              width: 7,
-              height: 7,
-              background: "var(--primary)",
-              borderRadius: "50%",
-              boxShadow: "0 0 8px var(--primary)66",
-            }}
-          />
-          <span
-            style={{
-              color: "var(--primary)",
-              fontSize: 12,
-              letterSpacing: 3,
-              fontWeight: 700,
-            }}
-          >
-            TXLABZ
-          </span>
-          <span style={{ color: "#222" }}>/</span>
-          <span style={{ color: "#888", fontSize: 12 }}>IDEA PIPELINE</span>
+      {/* Top bar */}
+      <div className="validator-topbar-progress sticky top-0 z-[100]">
+        <div className="tbar mx-auto flex max-w-[1380px] items-center justify-between px-8 py-[11px]">
+          <div className="validator-brand-lockup">
+            <div className="validator-brand-mark" aria-hidden="true">
+              <span className="validator-brand-core" />
+            </div>
+            <Link href="/" className="validator-brand-copy">
+              <span className="validator-brand-kicker">Sovereign workspace</span>
+              <span className="validator-brand-title">AUTOMARK AI</span>
+            </Link>
+            <span className="validator-brand-divider">/</span>
+            <span className="validator-brand-pill">Idea Pipeline</span>
+          </div>
+          <div className="psteps flex items-center gap-1.5">
+            {[
+              { id: "input", l: "01 INPUT" },
+              { id: "done1", l: "02 EVALUATE" },
+              { id: "done2", l: "03 DESIGN" },
+            ].map((s, i) => {
+              const past =
+                s.id === "input" ||
+                (s.id === "done1" &&
+                  ["done1", "agent2", "done2"].includes(step)) ||
+                (s.id === "done2" && step === "done2");
+              const active =
+                (s.id === "input" && ["input", "agent1"].includes(step)) ||
+                (s.id === "done1" && ["done1", "agent2"].includes(step)) ||
+                (s.id === "done2" && step === "done2");
+              return (
+                <div key={s.id} className="flex items-center gap-1.5">
+                  {i > 0 && <span className="validator-step-line">----</span>}
+                  <span
+                    className={`validator-step ${
+                      active ? "is-active" : past ? "is-past" : ""
+                    }`}
+                  >
+                    <span className="validator-step-dot" />
+                    <span className="validator-step-label">
+                      {past && !active ? "Done / " : ""}
+                      {s.l}
+                    </span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          {step !== "input" && (
+            <button
+              className={`validator-reset rounded-[4px] border border-[#2a2a2a] bg-transparent px-[14px] py-[5px] text-[10px] tracking-[0.1em] ${
+                isRunning ? "cursor-not-allowed text-[#6d7874]" : "cursor-pointer text-[#c0cbc8]"
+              }`}
+              onClick={reset}
+              disabled={isRunning}
+            >
+              ? RESET
+            </button>
+          )}
         </div>
-        <div
-          className="psteps"
-          style={{ display: "flex", alignItems: "center", gap: 6 }}
-        >
-          {[
-            { id: "input", l: "01 INPUT" },
-            { id: "done1", l: "02 EVALUATE" },
-            { id: "done2", l: "03 DESIGN" },
-          ].map((s, i) => {
-            const past =
-              s.id === "input" ||
-              (s.id === "done1" &&
-                ["done1", "agent2", "done2"].includes(step)) ||
-              (s.id === "done2" && step === "done2");
-            const active =
-              (s.id === "input" && ["input", "agent1"].includes(step)) ||
-              (s.id === "done1" && ["done1", "agent2"].includes(step)) ||
-              (s.id === "done2" && step === "done2");
-            return (
-              <div
-                key={s.id}
-                style={{ display: "flex", alignItems: "center", gap: 6 }}
-              >
-                {i > 0 && (
-                  <span style={{ color: "#333", fontSize: 10 }}>────</span>
-                )}
-                <span
-                  style={{
-                    fontSize: 10,
-                    letterSpacing: 1.5,
-                    color: past ? "var(--primary)" : active ? "#fff" : "#555",
-                  }}
-                >
-                  {past && !active ? "✓ " : ""}
-                  {s.l}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-        {step !== "input" && (
-          <button
-            onClick={reset}
-            disabled={isRunning}
-            style={{
-              background: "none",
-              border: "1px solid #2a2a2a",
-              color: isRunning ? "#333" : "#777",
-              padding: "5px 14px",
-              borderRadius: 4,
-              cursor: isRunning ? "not-allowed" : "pointer",
-              fontFamily: "inherit",
-              fontSize: 10,
-              letterSpacing: 1,
-            }}
-          >
-            ↺ RESET
-          </button>
-        )}
       </div>
-
       {/* ── Main content ── */}
-      <div
-        className="mpad"
-        style={{ maxWidth: 900, margin: "0 auto", padding: "44px 24px" }}
-      >
+      <div className="mpad mx-auto max-w-[1380px] px-8 pb-14 pt-10">
         {/* ════ INPUT FORM ════ */}
         {step === "input" && (
-          <div>
-            <div style={{ marginBottom: 40 }}>
-              <h1
-                style={{
-                  fontSize: 28,
-                  fontWeight: 700,
-                  color: "#fff",
-                  marginBottom: 10,
-                  letterSpacing: -0.5,
-                  lineHeight: 1.2,
-                }}
-              >
-                Drop your app idea.
-              </h1>
-              <p
-                style={{
-                  color: "#aaa",
-                  fontSize: 14,
-                  lineHeight: 1.7,
-                  maxWidth: 480,
-                }}
-              >
-                Get an{" "}
-                <span style={{ color: "var(--primary)", fontWeight: 600 }}>
-                  instant viability score
-                </span>{" "}
-                and{" "}
-                <span style={{ color: "var(--primary)", fontWeight: 600 }}>
-                  live UI mock
-                </span>{" "}
-                — powered by a 2-agent AI pipeline.
-              </p>
-            </div>
-
-            <div style={{ marginBottom: 24 }}>
-              <span
-                style={{
-                  color: "#444",
-                  fontSize: 10,
-                  letterSpacing: 1.5,
-                  textTransform: "uppercase",
-                  marginRight: 10,
-                }}
-              >
-                Try an example
-              </span>
-              {EXAMPLE_IDEAS.map((ex, i) => (
-                <button
-                  key={i}
-                  onClick={() => {
-                    const updated = {
-                      ...form,
-                      appName: ex.name,
-                      description: ex.desc,
-                    };
-                    setForm(updated);
-                    setOptionsVisible(true);
-                    try {
-                      localStorage.setItem(DRAFT_KEY, JSON.stringify(updated));
-                    } catch {}
-                  }}
-                  style={{
-                    background: "none",
-                    border: "1px solid #2a2a2a",
-                    color: "#555",
-                    borderRadius: 4,
-                    padding: "4px 10px",
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                    fontSize: 11,
-                    marginRight: 8,
-                    marginBottom: 6,
-                    letterSpacing: 0.5,
-                    transition: "border-color 0.15s, color 0.15s",
-                  }}
-                  onMouseEnter={(e: ReactMouseEvent<HTMLButtonElement>) => {
-                    e.currentTarget.style.borderColor = "var(--primary)66";
-                    e.currentTarget.style.color = "var(--primary)";
-                  }}
-                  onMouseLeave={(e: ReactMouseEvent<HTMLButtonElement>) => {
-                    e.currentTarget.style.borderColor = "#2a2a2a";
-                    e.currentTarget.style.color = "#555";
-                  }}
-                >
-                  {ex.name}
-                </button>
-              ))}
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-              <div>
-                <label style={labelStyle}>
-                  App Name <span style={{ color: "var(--primary)" }}>*</span>
-                </label>
-                <input
-                  value={form.appName}
-                  onChange={set("appName")}
-                  placeholder="e.g. ReceiptRadar"
-                  style={inputStyle}
-                  autoFocus
-                />
-              </div>
-              <div>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "baseline",
-                    marginBottom: 7,
-                  }}
-                >
-                  <label style={{ ...labelStyle, marginBottom: 0 }}>
-                    What does it do?{" "}
-                    <span style={{ color: "var(--primary)" }}>*</span>
-                  </label>
-                  <span
-                    style={{
-                      color:
-                        form.description.length > 400
-                          ? "var(--secondary)"
-                          : "#333",
-                      fontSize: 10,
-                      fontFamily: "monospace",
-                    }}
-                  >
-                    {form.description.length}/600
+          <div className="pipeline-shell">
+            <motion.header
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, ease: "easeOut" }}
+              className="pipeline-hero"
+            >
+              <div className="pipeline-kicker-row">
+                <div className="pipeline-status-row">
+                  <span className="pipeline-status-dot" />
+                  <span className="pipeline-status-label">
+                    Sovereign Protocol Active
                   </span>
                 </div>
-                <textarea
-                  value={form.description}
-                  onChange={set("description")}
-                  placeholder="Describe the core product, problem it solves, and key features..."
-                  rows={7}
-                  maxLength={600}
-                  style={{
-                    ...inputStyle,
-                    resize: "vertical",
-                    lineHeight: 1.75,
-                    minHeight: 130,
-                  }}
-                />
-                <p
-                  style={{
-                    color: "#444",
-                    fontSize: 11,
-                    marginTop: 7,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  <span style={{ color: "var(--primary)66" }}>tip:</span> Be
-                  specific about the problem and key features. Better input =
-                  better evaluation.
-                </p>
               </div>
-
-              {optionsVisible && (
-                <div className="reveal-fields">
-                  <div
-                    style={{
-                      borderTop: "1px solid #161616",
-                      paddingTop: 20,
-                      marginBottom: 4,
-                    }}
-                  >
-                    <span
-                      style={{
-                        color: "#666",
-                        fontSize: 10,
-                        letterSpacing: 2,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      Optional · Improves accuracy
+              <div className="pipeline-hero-grid">
+                <div className="pipeline-hero-copy">
+                  <h1 className="validator-hero-title pipeline-title">
+                    <span className="pipeline-title-main">Idea Pipeline:</span>
+                    <br />
+                    <span className="pipeline-title-accent">
+                      Intelligence-Driven
                     </span>
+                    {" "}
+                    <span className="pipeline-title-tail">Validation</span>
+                  </h1>
+                  <p className="validator-hero-lead pipeline-lead">
+                    Deploy the Sovereign Architect protocol to verify market
+                    saturation, technical feasibility, and economic viability.
+                    High-fidelity intelligence reports generated in real-time.
+                  </p>
+                </div>
+                <div className="pipeline-panel pipeline-fee-panel">
+                  <div className="pipeline-fee-label">
+                    Standard execution fee
                   </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 20,
-                      marginTop: 16,
-                    }}
-                  >
-                    <div
-                      className="g2"
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gap: 16,
-                      }}
-                    >
-                      <div>
-                        <label style={labelStyle}>Target Audience</label>
-                        <input
-                          value={form.audience}
-                          onChange={set("audience")}
-                          placeholder="e.g. Freelancers, SaaS founders"
-                          style={inputStyle}
-                        />
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Rough Budget</label>
-                        <input
-                          value={form.budget}
-                          onChange={set("budget")}
-                          placeholder="e.g. $0 bootstrap"
-                          style={inputStyle}
-                        />
-                      </div>
+                  <div className="pipeline-fee-value">
+                    $5.00
+                    <span className="pipeline-fee-unit"> / Validation</span>
+                  </div>
+                </div>
+              </div>
+            </motion.header>
+
+            <div className="pipeline-layout">
+              <motion.section
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.05, ease: "easeOut" }}
+                className="pipeline-form-stack"
+              >
+                <div className="pipeline-panel pipeline-form-panel">
+                  <div className="pipeline-example-header">
+                    <span className="pipeline-micro-label">
+                      Project alias suggestions
+                    </span>
+                    <div className="pipeline-chip-row">
+                      {EXAMPLE_IDEAS.map((ex) => (
+                        <button
+                          className="example-chip pipeline-chip"
+                          key={ex.name}
+                          onClick={() => {
+                            const updated = {
+                              ...form,
+                              appName: ex.name,
+                              description: ex.desc,
+                            };
+                            persistDraft(updated);
+                          }}
+                          onMouseEnter={(
+                            e: ReactMouseEvent<HTMLButtonElement>,
+                          ) => {
+                            e.currentTarget.style.borderColor =
+                              "var(--primary)66";
+                            e.currentTarget.style.color = "var(--primary)";
+                          }}
+                          onMouseLeave={(
+                            e: ReactMouseEvent<HTMLButtonElement>,
+                          ) => {
+                            e.currentTarget.style.borderColor = "#2a2a2a";
+                            e.currentTarget.style.color = "#b0bbb8";
+                          }}
+                        >
+                          {ex.name}
+                        </button>
+                      ))}
                     </div>
-                    <div>
-                      <label style={labelStyle}>Preferred Revenue Model</label>
+                  </div>
+
+                  <div className="pipeline-field-stack">
+                    <div className="pipeline-field">
+                      <label style={labelStyle}>
+                        App Name / Project Alias
+                        <span style={{ color: "var(--primary)" }}> *</span>
+                      </label>
                       <input
-                        value={form.revenue}
-                        onChange={set("revenue")}
-                        placeholder="e.g. Monthly SaaS, freemium, one-time"
+                        value={form.appName}
+                        onChange={set("appName")}
+                        placeholder="e.g. NeuralNode Infrastructure"
                         style={inputStyle}
+                        className="protocol-input"
+                        autoFocus
                       />
                     </div>
+
+                    <div className="pipeline-field">
+                      <div className="pipeline-field-head">
+                        <label style={{ ...labelStyle, marginBottom: 0 }}>
+                          Core Vision / Architectural Intent
+                          <span style={{ color: "var(--primary)" }}> *</span>
+                        </label>
+                        <span className="pipeline-counter">
+                          {form.description.length}/600
+                        </span>
+                      </div>
+                      <textarea
+                        value={form.description}
+                        onChange={set("description")}
+                        placeholder="Describe the high-signal quality and the technical gap this protocol fills..."
+                        rows={6}
+                        maxLength={600}
+                        style={{
+                          ...inputStyle,
+                          resize: "vertical",
+                          lineHeight: 1.8,
+                          minHeight: 138,
+                        }}
+                        className="protocol-input protocol-textarea"
+                      />
+                    </div>
+
+                    <div className="pipeline-field-grid">
+                      <div className="pipeline-select-card is-primary">
+                        <label className="pipeline-micro-label">
+                          Target market segment
+                        </label>
+                        <div
+                          className="pipeline-premium-select"
+                          ref={audienceMenuRef}
+                        >
+                          <button
+                            type="button"
+                            className="pipeline-premium-trigger"
+                            onClick={() =>
+                              setOpenMenu((current) =>
+                                current === "audience" ? null : "audience",
+                              )
+                            }
+                            aria-haspopup="listbox"
+                            aria-expanded={openMenu === "audience"}
+                          >
+                            <span
+                              className={`pipeline-premium-value ${
+                                primaryAudienceSelection
+                                  ? ""
+                                  : "is-placeholder"
+                              }`}
+                            >
+                              {primaryAudienceSelection ||
+                                "Select a primary audience"}
+                            </span>
+                            <span
+                              className={`pipeline-premium-chevron ${
+                                openMenu === "audience" ? "is-open" : ""
+                              }`}
+                            >
+                              ˅
+                            </span>
+                          </button>
+
+                          {openMenu === "audience" && (
+                            <div
+                              className="pipeline-premium-menu"
+                              role="listbox"
+                            >
+                              {TARGET_AUDIENCE_OPTIONS.map((option) => {
+                                const isActive =
+                                  option === primaryAudienceSelection;
+
+                                return (
+                                  <button
+                                    key={option}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={isActive}
+                                    className={`pipeline-premium-option ${
+                                      isActive ? "is-active" : ""
+                                    }`}
+                                    onClick={() => addAudienceFromSelect(option)}
+                                  >
+                                    <span>{option}</span>
+                                    {isActive && (
+                                      <span className="pipeline-premium-option-meta">
+                                        Selected
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pipeline-select-card is-primary">
+                        <label className="pipeline-micro-label">
+                          Rough budget
+                        </label>
+                        <div
+                          className="pipeline-premium-select"
+                          ref={budgetMenuRef}
+                        >
+                          <button
+                            type="button"
+                            className="pipeline-premium-trigger"
+                            onClick={() =>
+                              setOpenMenu((current) =>
+                                current === "budget" ? null : "budget",
+                              )
+                            }
+                            aria-haspopup="listbox"
+                            aria-expanded={openMenu === "budget"}
+                          >
+                            <span
+                              className={`pipeline-premium-value ${
+                                form.budget ? "" : "is-placeholder"
+                              }`}
+                            >
+                              {form.budget || "Select budget range"}
+                            </span>
+                            <span
+                              className={`pipeline-premium-chevron ${
+                                openMenu === "budget" ? "is-open" : ""
+                              }`}
+                            >
+                              ˅
+                            </span>
+                          </button>
+
+                          {openMenu === "budget" && (
+                            <div
+                              className="pipeline-premium-menu is-end"
+                              role="listbox"
+                            >
+                              {BUDGET_OPTIONS.map((option) => {
+                                const isActive = option === form.budget;
+
+                                return (
+                                  <button
+                                    key={option}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={isActive}
+                                    className={`pipeline-premium-option ${
+                                      isActive ? "is-active" : ""
+                                    }`}
+                                    onClick={() => {
+                                      updateFormValue("budget", option);
+                                      setOpenMenu(null);
+                                    }}
+                                  >
+                                    <span>{option}</span>
+                                    {isActive && (
+                                      <span className="pipeline-premium-option-meta">
+                                        Selected
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pipeline-select-card is-primary">
+                      <label className="pipeline-micro-label">
+                        Preferred revenue model
+                      </label>
+                      <div
+                        className="pipeline-premium-select"
+                        ref={revenueMenuRef}
+                      >
+                        <button
+                          type="button"
+                          className="pipeline-premium-trigger"
+                          onClick={() =>
+                            setOpenMenu((current) =>
+                              current === "revenue" ? null : "revenue",
+                            )
+                          }
+                          aria-haspopup="listbox"
+                          aria-expanded={openMenu === "revenue"}
+                        >
+                          <span
+                            className={`pipeline-premium-value ${
+                              selectedRevenueOption ? "" : "is-placeholder"
+                            }`}
+                          >
+                            {selectedRevenueOption?.label ||
+                              "Select monetization model"}
+                          </span>
+                          <span
+                            className={`pipeline-premium-chevron ${
+                              openMenu === "revenue" ? "is-open" : ""
+                            }`}
+                          >
+                            Ë…
+                          </span>
+                        </button>
+
+                        {openMenu === "revenue" && (
+                          <div
+                            className="pipeline-premium-menu"
+                            role="listbox"
+                          >
+                            {REVENUE_MODEL_OPTIONS.map((option) => {
+                              const isActive = option.label === form.revenue;
+
+                              return (
+                                <button
+                                  key={option.label}
+                                  type="button"
+                                  role="option"
+                                  aria-selected={isActive}
+                                  className={`pipeline-premium-option ${
+                                    isActive ? "is-active" : ""
+                                  }`}
+                                  onClick={() => {
+                                    updateFormValue("revenue", option.label);
+                                    setOpenMenu(null);
+                                  }}
+                                >
+                                  <span className="pipeline-premium-option-copy">
+                                    <span>{option.label}</span>
+                                    <span className="pipeline-premium-option-detail">
+                                      {option.detail}
+                                    </span>
+                                  </span>
+                                  {isActive && (
+                                    <span className="pipeline-premium-option-meta">
+                                      Selected
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pipeline-field">
+                      <div className="pipeline-field-head">
+                        <label className="pipeline-micro-label">
+                          Audience signals
+                        </label>
+                        <span className="pipeline-counter">
+                          {selectedAudiencePills.length}/
+                          {AUDIENCE_PILL_OPTIONS.length} selected
+                        </span>
+                      </div>
+                      <div className="pipeline-pill-grid">
+                        {AUDIENCE_PILL_OPTIONS.map((option) => {
+                          const active = selectedAudiencePills.includes(
+                            option.label,
+                          );
+
+                          return (
+                            <button
+                              key={option.label}
+                              type="button"
+                              className={`pipeline-audience-pill ${
+                                active ? "is-active" : ""
+                              }`}
+                              onClick={() => toggleAudiencePill(option.label)}
+                            >
+                              <span className="pipeline-audience-pill-copy">
+                                <span className="pipeline-audience-pill-title">
+                                  {option.label}
+                                </span>
+                                <span className="pipeline-audience-pill-detail">
+                                  {option.detail}
+                                </span>
+                              </span>
+                              <span className="pipeline-audience-pill-state">
+                                {active ? "Selected" : "Add"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="pipeline-helper-copy">
+                        {selectedAudiencePills.length > 0
+                          ? `Selected: ${selectedAudiencePills.join(", ")}`
+                          : "Pick multiple audience signals to help the validator understand who feels the pain most strongly."}
+                      </p>
+                    </div>
+
+                  </div>
+
+                  {error && (
+                    <div className="pipeline-error-card">
+                      <p style={{ color: "#ff7777", fontSize: 12 }}>
+                        &#9888; {error}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="pipeline-cta-wrap">
+                    <button
+                      onClick={runAgent1}
+                      disabled={!canRun1 || ctaState === "running"}
+                      className={`validator-cta pipeline-cta ${
+                        ctaState === "ready" ? "cta-ready" : ""
+                      }`}
+                      style={{
+                        ...ctaBtnStyle,
+                        maxWidth: "100%",
+                        marginTop: 0,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      {ctaState === "running" ? (
+                        <span className="pipeline-cta-running">
+                          <span style={{ display: "inline-flex", gap: 4 }}>
+                            <span className="dot1 pipeline-run-dot" />
+                            <span className="dot2 pipeline-run-dot" />
+                            <span className="dot3 pipeline-run-dot" />
+                          </span>
+                          SOVEREIGN PROTOCOL RUNNING...
+                        </span>
+                      ) : (
+                        <span className="pipeline-cta-content">
+                          <span>COMMENCE VALIDATION</span>
+                          <span className="pipeline-cta-meta">$5.00 USD ?</span>
+                        </span>
+                      )}
+                    </button>
+                    <p className="pipeline-meta-note">
+                      Claude + GPT-4o execute in parallel. Strategy view first,
+                      UI concept second.
+                    </p>
                   </div>
                 </div>
-              )}
-            </div>
 
-            {error && (
-              <div
-                style={{
-                  marginTop: 20,
-                  background: "#ff444411",
-                  border: "1px solid #ff444433",
-                  borderRadius: 6,
-                  padding: "10px 14px",
-                }}
-              >
-                <p style={{ color: "#ff7777", fontSize: 12 }}>
-                  &#9888; {error}
-                </p>
-              </div>
-            )}
-
-            <div style={{ marginTop: 0 }}>
-              <button
-                onClick={runAgent1}
-                disabled={!canRun1 || ctaState === "running"}
-                className={ctaState === "ready" ? "cta-ready" : ""}
-                style={ctaBtnStyle}
-              >
-                {ctaState === "running" ? (
-                  <span
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 10,
-                    }}
-                  >
-                    <span style={{ display: "inline-flex", gap: 4 }}>
-                      <span
-                        className="dot1"
-                        style={{
-                          display: "inline-block",
-                          width: 5,
-                          height: 5,
-                          borderRadius: "50%",
-                          background: "#000",
-                        }}
-                      />
-                      <span
-                        className="dot2"
-                        style={{
-                          display: "inline-block",
-                          width: 5,
-                          height: 5,
-                          borderRadius: "50%",
-                          background: "#000",
-                        }}
-                      />
-                      <span
-                        className="dot3"
-                        style={{
-                          display: "inline-block",
-                          width: 5,
-                          height: 5,
-                          borderRadius: "50%",
-                          background: "#000",
-                        }}
-                      />
+                <div className="pipeline-panel pipeline-preview-panel">
+                  <div className="pipeline-preview-head">
+                    <h3 className="pipeline-preview-title">
+                      Intelligence Blueprint Preview
+                    </h3>
+                    <span className="pipeline-preview-tag">
+                      SAMPLE_DATA_SET_v5.0
                     </span>
-                    AGENT ANALYZING...
-                  </span>
-                ) : (
-                  "RUN AGENT 1 \u2192 EVALUATE"
-                )}
-              </button>
-              <p
-                style={{
-                  color: "#555",
-                  fontSize: 11,
-                  marginTop: 12,
-                  letterSpacing: 0.5,
-                }}
+                  </div>
+
+                  <div className="pipeline-metric-grid">
+                    {[
+                      {
+                        label: "Market viability",
+                        value: "68.4%",
+                        width: "68%",
+                      },
+                      {
+                        label: "Saturation risk",
+                        value: "24.1%",
+                        width: "24%",
+                      },
+                      {
+                        label: "Feasibility index",
+                        value: "82.9%",
+                        width: "83%",
+                      },
+                    ].map((metric) => (
+                      <div key={metric.label} className="pipeline-metric-card">
+                        <div className="pipeline-metric-line">
+                          <span
+                            className="pipeline-metric-line-fill"
+                            style={{ width: metric.width }}
+                          />
+                        </div>
+                        <p className="pipeline-metric-label">{metric.label}</p>
+                        <p className="pipeline-metric-value">{metric.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="pipeline-preview-quote">
+                    &ldquo;The sovereign architect protocol identified a premium
+                    opportunity when the wedge is clear, the audience is narrow
+                    enough to own, and execution remains disciplined from day
+                    one.&rdquo;
+                  </div>
+                </div>
+              </motion.section>
+
+              <motion.aside
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.55, delay: 0.12, ease: "easeOut" }}
+                className="pipeline-side-stack"
               >
-                <span style={{ color: "var(--primary)88" }}>Claude</span> +{" "}
-                <span style={{ color: "#74b9ff88" }}>GPT-4o</span> run in
-                parallel · 8 viability signals · ~15s
-              </p>
+                <div className="pipeline-panel pipeline-visual-card">
+                  <ProtocolWireframeVisual />
+                </div>
+
+                <div className="pipeline-panel pipeline-framework-card">
+                  <h2 className="pipeline-framework-title">
+                    Sovereign Validation Framework
+                  </h2>
+                  <div className="pipeline-framework-list">
+                    {FRAMEWORK_POINTS.map((item, index) => (
+                      <motion.div
+                        key={item.title}
+                        initial={{ opacity: 0, x: 12 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{
+                          duration: 0.35,
+                          delay: 0.18 + index * 0.08,
+                          ease: "easeOut",
+                        }}
+                        className="pipeline-framework-item"
+                      >
+                        <div className="pipeline-framework-icon">
+                          {item.code}
+                        </div>
+                        <div>
+                          <h4 className="pipeline-framework-item-title">
+                            {item.title}
+                          </h4>
+                          <p className="pipeline-framework-item-copy">
+                            {item.description}
+                          </p>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pipeline-token-strip">
+                  <div className="pipeline-token-label">
+                    Powered by force intelligence tokens
+                  </div>
+                  <div className="pipeline-token-row">
+                    {["HYBRID_PROTO", "MONOLITH_OS", "SOVEREIGN_V2"].map(
+                      (token) => (
+                        <span key={token}>{token}</span>
+                      ),
+                    )}
+                  </div>
+                </div>
+              </motion.aside>
             </div>
           </div>
         )}
@@ -2613,592 +3883,276 @@ CONSTRAINTS:
 
         {/* ════ RESULTS ════ */}
         {(step === "done1" || step === "done2") && evaluation && (
-          <div>
-            <CostBar runs={costRuns} />
-
-            {/* ── Save PDF button ── */}
-            <div
-              className="no-print"
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                marginBottom: 16,
-              }}
-            >
-              <button
-                onClick={savePDF}
-                disabled={pdfCopied}
-                style={{
-                  background: "none",
-                  border: "1px solid #2a2a2a",
-                  color: pdfCopied ? "var(--primary)" : "#777",
-                  padding: "6px 14px",
-                  borderRadius: 5,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  fontSize: 10,
-                  letterSpacing: 1.5,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  transition: "all 0.2s",
-                }}
-              >
-                <span>{pdfCopied ? "✓" : "⬇"}</span>
-                <span>{pdfCopied ? "OPENING PRINT..." : "SAVE AS PDF"}</span>
-              </button>
-            </div>
-
-            {/* ── Layer 1: Executive Verdict Card ── */}
-            <div
-              style={{
-                border: `1px solid ${vlColor}30`,
-                background: `${vlColor}06`,
-                borderRadius: 10,
-                padding: "22px 24px",
-                marginBottom: 24,
-              }}
-            >
-              {/* Row 1: verdict label + risk + confidence + app name */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  marginBottom: 12,
-                  flexWrap: "wrap",
-                }}
-              >
-                <span
-                  style={{
-                    color: vlColor,
-                    fontSize: 22,
-                    fontWeight: 900,
-                    letterSpacing: 4,
-                  }}
-                >
-                  {evaluation.verdictLabel}
-                </span>
-                <span
-                  style={{
-                    background: `${vlColor}18`,
-                    color: vlColor,
-                    fontSize: 10,
-                    padding: "4px 10px",
-                    borderRadius: 20,
-                    letterSpacing: 1,
-                  }}
-                >
-                  {evaluation.confidence}% confidence
-                </span>
-                <span
-                  style={{
-                    background: `${riskColor(evaluation.riskLevel)}18`,
-                    color: riskColor(evaluation.riskLevel),
-                    fontSize: 10,
-                    padding: "4px 10px",
-                    borderRadius: 20,
-                    letterSpacing: 1,
-                  }}
-                >
-                  {evaluation.riskLevel} risk
-                </span>
-                <span
-                  style={{ color: "#666", fontSize: 11, marginLeft: "auto" }}
-                >
-                  {trimmedForm.appName}
-                </span>
-              </div>
-
-              {/* Row 2: One-line executive summary */}
-              {evaluation.executiveSummary && (
-                <p
-                  style={{
-                    color: "#ccc",
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                    marginBottom: 14,
-                    fontStyle: "italic",
-                    borderLeft: `2px solid ${vlColor}44`,
-                    paddingLeft: 12,
-                  }}
-                >
-                  &ldquo;{evaluation.executiveSummary}&rdquo;
-                </p>
-              )}
-
-              {/* Row 3: Key drivers */}
-              {evaluation.keyDrivers.length > 0 && (
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 6 }}
-                >
-                  {evaluation.keyDrivers.map((d, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        display: "flex",
-                        alignItems: "flex-start",
-                        gap: 8,
-                      }}
-                    >
-                      <span
-                        style={{
-                          color: vlColor,
-                          fontSize: 10,
-                          marginTop: 2,
-                          flexShrink: 0,
-                        }}
-                      >
-                        ▸
-                      </span>
-                      <span
-                        style={{ color: "#888", fontSize: 12, lineHeight: 1.5 }}
-                      >
-                        {d}
-                      </span>
-                    </div>
-                  ))}
+          <div className="flex flex-col gap-6">
+            <section className="relative border border-white/7 bg-[linear-gradient(180deg,rgba(19,19,19,0.98)_0%,rgba(11,11,11,0.98)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+              <div className="grid gap-6 border-b border-white/4 px-[26px] pb-[22px] pt-[26px] xl:grid-cols-[minmax(0,1fr)_380px] xl:items-end">
+                <div>
+                  <p className="mb-3 inline-flex items-center gap-[7px] text-[10px] uppercase tracking-[0.22em] text-[#59d6cf]">
+                    <span
+                      aria-hidden="true"
+                      className="h-[5px] w-[5px] bg-[#59d6cf] shadow-[0_0_10px_rgba(89,214,207,0.55)]"
+                    />
+                    Protocol active
+                  </p>
+                  <h1 className="m-0 font-heading text-[clamp(2.2rem,7vw,4.4rem)] uppercase leading-[0.9] tracking-[-0.07em]">
+                    AI EVALUATION
+                    <span className="block text-[#6f7774]">COMPLETE</span>
+                  </h1>
+                  <p className="mt-[14px] max-w-[58ch] text-[13px] leading-[1.7] text-[#9daba6]">
+                    {trimmedForm.appName} is being pressure-tested against {primaryAudienceDisplay.toLowerCase()} demand,
+                    launch feasibility, and commercial survivability.
+                  </p>
                 </div>
-              )}
-
-              {/* Consensus signal — when both AIs agree/disagree */}
-              {gptEval &&
-                (() => {
-                  const claudeScore =
-                    evaluation.scores.marketViability +
-                    evaluation.scores.monetizationPotential +
-                    evaluation.scores.aiLeverage;
-                  const gptScore =
-                    gptEval.scores.marketViability +
-                    gptEval.scores.monetizationPotential +
-                    gptEval.scores.aiLeverage;
-                  const diff = Math.abs(claudeScore - gptScore);
-                  const agreement =
-                    diff <= 3 ? "High" : diff <= 6 ? "Moderate" : "Low";
-                  const aColor =
-                    agreement === "High"
-                      ? "var(--primary)"
-                      : agreement === "Moderate"
-                        ? "var(--secondary)"
-                        : "#ff4444";
-                  return (
-                    <div
-                      style={{
-                        marginTop: 12,
-                        marginBottom: 4,
-                        padding: "8px 12px",
-                        background: `${aColor}08`,
-                        border: `1px solid ${aColor}22`,
-                        borderRadius: 6,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                      }}
-                    >
-                      <span
-                        style={{
-                          color: aColor,
-                          fontSize: 10,
-                          letterSpacing: 1.5,
-                        }}
-                      >
-                        AI CONSENSUS
-                      </span>
-                      <span
-                        style={{ color: aColor, fontSize: 13, fontWeight: 700 }}
-                      >
-                        {agreement} agreement
-                      </span>
-                      <span
-                        style={{
-                          color: "#666",
-                          fontSize: 10,
-                          marginLeft: "auto",
-                        }}
-                      >
-                        Claude: {evaluation.confidence}% · GPT-4o:{" "}
-                        {gptEval.confidence}%
-                      </span>
+                <div className="self-stretch xl:pl-2">
+                  <div className="grid h-full min-h-[132px] grid-cols-2 border border-white/6 bg-white/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                    <div className="flex flex-col justify-between px-[18px] py-[16px]">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-[#7d8986]">
+                        Confidence
+                      </div>
+                      <div className="font-heading text-[3rem] font-bold leading-none tracking-[-0.08em] text-[var(--primary)] xl:text-[3.25rem]">
+                        {evaluation.confidence}%
+                      </div>
                     </div>
-                  );
-                })()}
+                    <div className="flex flex-col justify-between border-l border-white/6 px-[18px] py-[16px]">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-[#7d8986]">
+                        Risk profile
+                      </div>
+                      <div className="font-heading text-[2rem] font-semibold leading-none tracking-[-0.06em] text-[#d49a74] xl:text-[2.2rem]">
+                        {evaluation.riskLevel}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="px-[26px] pb-0 pt-5">
+                <AIPersonasBar
+                  claudeEval={evaluation}
+                  gptEval={gptEval}
+                  gptError={gptError}
+                />
+              </div>
+            </section>
 
-              {/* Dual CEO attribution */}
-              <AIPersonasBar gptEval={gptEval} gptError={gptError} />
+            <div className="grid gap-[18px] xl:grid-cols-[minmax(0,1.35fr)_minmax(250px,0.65fr)]">
+              <section className="relative border border-white/7 bg-[linear-gradient(180deg,rgba(19,19,19,0.98)_0%,rgba(11,11,11,0.98)_100%)] px-[18px] pb-4 pt-[18px] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                <p className="mb-[14px] text-[11px] uppercase tracking-[0.14em] text-[#e4e8e7]">Kill shots detected</p>
+                <div className="grid gap-[10px]">
+                  {(evaluation.killShots.length > 0
+                    ? evaluation.killShots
+                    : evaluation.keyDrivers.length > 0
+                      ? evaluation.keyDrivers
+                      : ["No structural kill shot surfaced in the current evaluation."])
+                    .slice(0, 3)
+                    .map((item, index) => (
+                      <div key={`${item}-${index}`} className="grid grid-cols-[28px_minmax(0,1fr)] items-start gap-3 border-t border-white/5 pt-[10px]">
+                        <span className="font-mono text-[11px] tracking-[0.12em] text-[#7a6661]">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <div>
+                          <strong className="mb-1 block text-[11px] uppercase tracking-[0.04em] text-[#dde5e2]">
+                            {index === 0
+                              ? "Data asymmetry"
+                              : index === 1
+                                ? "Acquisition pressure"
+                                : "Execution discipline"}
+                          </strong>
+                          <span className="text-[12px] leading-[1.65] text-[#93a19c]">{item}</span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </section>
+
+              <section className="relative border border-white/7 bg-[linear-gradient(180deg,rgba(19,19,19,0.98)_0%,rgba(11,11,11,0.98)_100%)] px-[18px] pb-4 pt-[18px] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                <p className="mb-[14px] text-[11px] uppercase tracking-[0.14em] text-[#e4e8e7]">Founder reality check</p>
+                <div className="grid gap-[10px]">
+                  {(evaluation.founderRealityCheck.length > 0
+                    ? evaluation.founderRealityCheck
+                    : evaluation.keyDrivers)
+                    .slice(0, 4)
+                    .map((item, index) => (
+                      <div key={`${item}-${index}`} className="grid grid-cols-[28px_minmax(0,1fr)] items-start gap-3 border-t border-white/5 pt-[10px]">
+                        <span className="font-mono text-[11px] tracking-[0.12em] text-[#7a6661]">+</span>
+                        <div>
+                          <strong className="mb-1 block text-[11px] uppercase tracking-[0.04em] text-[#dde5e2]">
+                            {index === 0
+                              ? "Truth"
+                              : index === 1
+                                ? "Market"
+                                : index === 2
+                                  ? "Moat"
+                                  : "Constraint"}
+                          </strong>
+                          <span className="text-[12px] leading-[1.65] text-[#93a19c]">{item}</span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </section>
             </div>
 
-            {/* ── Kill Shots (if any) ── */}
-            {evaluation.killShots.length > 0 && (
-              <div
-                style={{
-                  border: "1px solid #ff444433",
-                  background: "#ff44440a",
-                  borderRadius: 8,
-                  padding: "16px 20px",
-                  marginBottom: 24,
-                }}
-              >
-                <p
-                  style={{
-                    color: "#ff4444",
-                    fontSize: 10,
-                    letterSpacing: 2,
-                    textTransform: "uppercase",
-                    marginBottom: 10,
-                  }}
-                >
-                  ⚠ KILL SHOTS DETECTED
-                </p>
-                {evaluation.killShots.map((k, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 8,
-                      marginBottom: 7,
-                    }}
-                  >
-                    <span
-                      style={{
-                        color: "#ff4444",
-                        fontSize: 12,
-                        flexShrink: 0,
-                        marginTop: 1,
-                      }}
-                    >
-                      ✕
-                    </span>
-                    <span
-                      style={{
-                        color: "#ff7777",
-                        fontSize: 12,
-                        lineHeight: 1.6,
-                      }}
-                    >
-                      {k}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* ── Founder Reality Check ── */}
-            {evaluation.founderRealityCheck.length > 0 && (
-              <div
-                style={{
-                  border: "1px solid #ff880033",
-                  background: "#ff880007",
-                  borderRadius: 8,
-                  padding: "16px 20px",
-                  marginBottom: 24,
-                }}
-              >
-                <p
-                  style={{
-                    color: "#ff8800",
-                    fontSize: 10,
-                    letterSpacing: 2,
-                    textTransform: "uppercase",
-                    marginBottom: 12,
-                  }}
-                >
-                  FOUNDER REALITY CHECK
-                </p>
-                {evaluation.founderRealityCheck.map((r, i) => (
-                  <div
-                    key={i}
-                    className="reality-item"
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 10,
-                      marginBottom: 10,
-                      animationDelay: `${i * 0.1}s`,
-                    }}
-                  >
-                    <span
-                      style={{ color: "#ff8800", fontSize: 13, flexShrink: 0 }}
-                    >
-                      →
-                    </span>
-                    <span
-                      style={{
-                        color: "#cc8800",
-                        fontSize: 13,
-                        lineHeight: 1.65,
-                      }}
-                    >
-                      {r}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* ── Parameter Scores ── */}
-            <div style={{ marginBottom: 28 }}>
-              <p style={{ ...secTitle, marginBottom: 16 }}>PARAMETER SCORES</p>
-              <div
-                className="g2"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "4px 40px",
-                }}
-              >
+            <section className="relative border border-white/7 bg-[linear-gradient(180deg,rgba(19,19,19,0.98)_0%,rgba(11,11,11,0.98)_100%)] px-[18px] pb-4 pt-[22px] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+              <p className="mb-[18px] text-center text-[12px] uppercase tracking-[0.18em] text-[#dfe6e4]">Architectural parameters</p>
+              <div className="grid gap-[18px] sm:grid-cols-2 xl:grid-cols-5">
                 <ProgressBar
-                  label="Market Viability"
+                  label="Market viability"
                   metricKey="marketViability"
                   value={evaluation.scores.marketViability}
                 />
                 <ProgressBar
-                  label="Monetization Potential"
-                  metricKey="monetizationPotential"
-                  value={evaluation.scores.monetizationPotential}
-                />
-                <ProgressBar
-                  label="AI Leverage"
+                  label="AI leverage"
                   metricKey="aiLeverage"
                   value={evaluation.scores.aiLeverage}
                 />
                 <ProgressBar
-                  label="Viral / Growth"
+                  label="Monetization"
+                  metricKey="monetizationPotential"
+                  value={evaluation.scores.monetizationPotential}
+                />
+                <ProgressBar
+                  label="Viral potential"
                   metricKey="viralPotential"
                   value={evaluation.scores.viralPotential}
                 />
                 <ProgressBar
-                  label="Dev Complexity (lower=better)"
+                  label="Dev complexity"
                   metricKey="devComplexity"
                   value={evaluation.scores.devComplexity}
                   invert
                 />
               </div>
-            </div>
+            </section>
 
-            {/* ── Cost / Timeline Chips (with context) ── */}
-            <div
-              className="chips"
-              style={{
-                display: "flex",
-                gap: 10,
-                marginBottom: 28,
-                flexWrap: "wrap",
-              }}
-            >
-              <Chip
-                label="Launch Cost"
-                value={
-                  evaluation.budgetAssessment.realistic ||
-                  evaluation.scores.launchCost
-                }
-                warn={hasBudgetGap}
-                sub={
-                  hasBudgetGap
-                    ? `Your budget: ${evaluation.budgetAssessment.stated} · Gap: ${evaluation.budgetAssessment.gap}`
-                    : evaluation.budgetAssessment.note || undefined
-                }
-              />
-              <Chip
-                label="Time to Revenue"
-                value={evaluation.scores.timeToRevenue}
-                sub="First paying customer"
-              />
-              <Chip
-                label="Competition"
-                value={evaluation.scores.competitionRisk}
-                highlight={riskColor(evaluation.scores.competitionRisk)}
-                sub={
-                  evaluation.scores.competitionRisk === "High"
-                    ? "Funded incumbents present"
-                    : evaluation.scores.competitionRisk === "Medium"
-                      ? "Multiple alternatives exist"
-                      : "Underserved niche"
-                }
-              />
-            </div>
-
-            {/* ── Financial Projection ── */}
-            {evaluation.financialProjection.breakEvenUsers !== "Unknown" && (
-              <div
-                style={{
-                  border: "1px solid #2a2a2a",
-                  background: "#0f0f0f",
-                  borderRadius: 8,
-                  padding: "18px 22px",
-                  marginBottom: 28,
-                }}
-              >
-                <p
-                  style={{
-                    color: "#777",
-                    fontSize: 10,
-                    letterSpacing: 2,
-                    textTransform: "uppercase",
-                    marginBottom: 14,
-                  }}
-                >
-                  FINANCIAL PROJECTION
-                </p>
-                <div
-                  className="g2"
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: 14,
-                    marginBottom: 12,
-                  }}
-                >
-                  {[
-                    {
-                      label: "Break-even Users",
-                      value: evaluation.financialProjection.breakEvenUsers,
-                    },
-                    {
-                      label: "MRR Target",
-                      value: evaluation.financialProjection.mrrTarget,
-                    },
-                    {
-                      label: "Time to Break-even",
-                      value: evaluation.financialProjection.timeToBreakEven,
-                    },
-                    {
-                      label: "Year 1 Revenue Range",
-                      value: `${evaluation.financialProjection.revenueYear1Low} – ${evaluation.financialProjection.revenueYear1High}`,
-                    },
-                  ].map(({ label, value }) => (
-                    <div key={label}>
+            <section className="relative border border-white/7 bg-[linear-gradient(180deg,rgba(19,19,19,0.98)_0%,rgba(11,11,11,0.98)_100%)] px-[18px] pb-4 pt-[20px] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+              <div className="grid gap-6 xl:grid-cols-[minmax(260px,0.9fr)_minmax(0,1.1fr)]">
+                <div className="grid gap-[10px]">
+                  <div className="mb-0.5 text-[9px] uppercase tracking-[0.2em] text-[#6f7c78]">
+                    Commercial benchmarks
+                  </div>
+                  {commercialBlocks.map((block) => {
+                    const tone = block.warn
+                      ? "#ff9c9c"
+                      : block.highlight || "#f2f6f4";
+                    return (
                       <div
+                        key={block.label}
+                        className="border border-white/6 bg-[#131313] px-[16px] py-[14px] shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]"
                         style={{
-                          color: "#555",
-                          fontSize: 10,
-                          letterSpacing: 1.5,
-                          textTransform: "uppercase",
-                          marginBottom: 4,
+                          borderColor: block.warn
+                            ? "#ff5e5e22"
+                            : block.highlight
+                              ? `${block.highlight}26`
+                              : "rgba(255,255,255,0.06)",
                         }}
                       >
-                        {label}
+                        <div className="mb-2 text-[9px] uppercase tracking-[0.18em] text-[#7b8884]">
+                          {block.label}
+                        </div>
+                        <div
+                          className="font-heading text-[1.35rem] leading-none tracking-[-0.05em]"
+                          style={{ color: tone }}
+                        >
+                          {block.value}
+                        </div>
+                        <div
+                          className={`mt-2 text-[11px] leading-[1.55] ${
+                            block.warn ? "text-[#d39a9a]" : "text-[#8d9b96]"
+                          }`}
+                        >
+                          {block.sub}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="grid content-start gap-1">
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(128px,148px)_88px] items-end gap-4 border-b border-white/6 pb-[10px]">
+                    <div className="text-[9px] uppercase tracking-[0.2em] text-[#6f7c78]">
+                      Financial projection model
+                    </div>
+                    <div className="text-right text-[9px] uppercase tracking-[0.2em] text-[#55615d]">
+                      Target value
+                    </div>
+                    <div className="text-right text-[9px] uppercase tracking-[0.2em] text-[#55615d]">
+                      Probability
+                    </div>
+                  </div>
+                  {financialModelRows.map((row) => (
+                    <div
+                      key={row.metric}
+                      className="grid grid-cols-[minmax(0,1fr)_minmax(128px,148px)_88px] items-center gap-4 border-b border-white/6 py-[10px] last:border-b-0"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-[#d8dfdc]">
+                          {row.metric}
+                        </div>
+                      </div>
+                      <div className="whitespace-nowrap text-right text-[12px] font-medium tabular-nums text-[#eef3f1] xl:text-[13px]">
+                        {row.targetValue}
                       </div>
                       <div
-                        style={{
-                          color: "#e0e0e0",
-                          fontSize: 14,
-                          fontWeight: 600,
-                          fontFamily: "monospace",
-                        }}
+                        className="whitespace-nowrap text-right text-[10px] uppercase tracking-[0.16em]"
+                        style={{ color: row.accent }}
                       >
-                        {value}
+                        {row.probability}
                       </div>
                     </div>
                   ))}
                 </div>
-                {evaluation.financialProjection.keyAssumptions && (
-                  <p
-                    style={{
-                      color: "#666",
-                      fontSize: 11,
-                      lineHeight: 1.6,
-                      borderTop: "1px solid #1a1a1a",
-                      paddingTop: 10,
-                    }}
-                  >
-                    <span style={{ color: "#888" }}>Assumptions: </span>
-                    {evaluation.financialProjection.keyAssumptions}
-                  </p>
-                )}
+
               </div>
-            )}
+            </section>
 
-            {/* ── Collapsible Text Sections ── */}
-            {[
-              { t: "DEVELOPMENT APPROACH", v: evaluation.devApproach },
-              {
-                t: "MONETIZATION STRATEGY",
-                v: evaluation.monetizationStrategy,
-              },
-              { t: "MARKETING APPROACH", v: evaluation.marketingApproach },
-              { t: "RISKS & MITIGATIONS", v: evaluation.risks },
-              { t: "ADDITIONAL INSIGHTS", v: evaluation.additionalInsights },
-            ]
-              .filter((sec) => sec.v)
-              .map((sec) => (
-                <CollapsibleSection
-                  key={sec.t}
-                  title={sec.t}
-                  summary={
-                    sec.v.slice(0, 100) + (sec.v.length > 100 ? "…" : "")
-                  }
-                  content={sec.v}
-                />
-              ))}
-
-            {/* ── Dependencies ── */}
-            <div
-              style={{
-                borderLeft: "2px solid #1a1a1a",
-                paddingLeft: 18,
-                marginBottom: 32,
-              }}
-            >
-              <p style={secTitle}>DEPENDENCIES</p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
-                {evaluation.dependencies.length > 0 ? (
-                  evaluation.dependencies.map((d, i) => <Tag key={i}>{d}</Tag>)
-                ) : (
-                  <span style={{ color: "#555", fontSize: 12 }}>
-                    None specified
-                  </span>
-                )}
+            <section className="relative border border-white/7 bg-[linear-gradient(180deg,rgba(19,19,19,0.98)_0%,rgba(11,11,11,0.98)_100%)] px-[18px] pb-4 pt-[18px] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+              <p className="mb-[14px] text-[11px] uppercase tracking-[0.14em] text-[#e4e8e7]">Strategic roadmap</p>
+              <div className="grid gap-[10px]">
+                {[
+                  { t: "DEVELOPMENT APPROACH", v: evaluation.devApproach },
+                  { t: "MONETIZATION STRATEGY", v: evaluation.monetizationStrategy },
+                  { t: "MARKETING APPROACH", v: evaluation.marketingApproach },
+                  {
+                    t: "RISKS & LIMITATIONS",
+                    v: evaluation.risks || evaluation.additionalInsights,
+                    supplementary:
+                      evaluation.dependencies.length > 0 ? (
+                        <>
+                          {evaluation.dependencies.slice(0, 4).map((dependency, index) => (
+                            <Tag key={`${dependency}-${index}`}>{dependency}</Tag>
+                          ))}
+                        </>
+                      ) : null,
+                  },
+                ]
+                  .filter((sec) => sec.v)
+                  .map((sec, index) => (
+                    <CollapsibleSection
+                      key={sec.t}
+                      title={sec.t}
+                      summary={sec.v.slice(0, 100) + (sec.v.length > 100 ? "..." : "")}
+                      content={sec.v}
+                      supplementary={sec.supplementary}
+                      defaultOpen={index === 3}
+                    />
+                  ))}
               </div>
-            </div>
+            </section>
 
-            {error && (
-              <div
-                style={{
-                  marginBottom: 16,
-                  background: "#ff444411",
-                  border: "1px solid #ff444433",
-                  borderRadius: 6,
-                  padding: "10px 14px",
-                }}
-              >
-                <p style={{ color: "#ff7777", fontSize: 12 }}>⚠ {error}</p>
+            {error ? (
+              <div className="border border-[#ff444433] bg-[#ff444411] px-[14px] py-[10px]">
+                <p className="m-0 text-[12px] text-[#ff7777]">{error}</p>
               </div>
-            )}
+            ) : null}
 
-            {/* ── Agent 2 CTA ── */}
             {step === "done1" && (
-              <div
-                style={{ display: "flex", flexDirection: "column", gap: 12 }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 12,
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                  }}
+              <div className="pt-2 text-center">
+                <button
+                  onClick={runAgent2}
+                  className="inline-flex bg-[var(--primary)] px-[34px] py-4 text-[13px] tracking-[0.16em] text-[#06211f] shadow-[0_0_28px_rgba(79,219,200,0.26)]"
                 >
-                  <button
-                    onClick={runAgent2}
-                    style={{
-                      ...btnPrimary,
-                      padding: "15px 32px",
-                      fontSize: 13,
-                      boxShadow: "0 0 20px var(--primary)22",
-                    }}
-                  >
-                    RUN AGENT 2 → DESIGN APP SCREEN
-                  </button>
-                  <button onClick={reset} style={btnGhost}>
-                    START OVER
-                  </button>
-                </div>
-                <p style={{ color: "#666", fontSize: 11, letterSpacing: 0.5 }}>
-                  Generate a production-ready UI concept · Powered by{" "}
-                  <span style={{ color: "#888" }}>Claude Sonnet 4.5</span> ·
-                  ~20s
-                </p>
+                  RUN AGENT 2
+                </button>
+                <p className="mt-[10px] text-[10px] uppercase tracking-[0.18em] text-[#6f7b77]">Design app screen protocol</p>
               </div>
             )}
 
@@ -3232,7 +4186,7 @@ CONSTRAINTS:
                     >
                       ✓ MOBILE SCREEN GENERATED
                     </p>
-                    <p style={{ color: "#666", fontSize: 11 }}>
+                    <p style={{ color: "#b0bbb8", fontSize: 11 }}>
                       iPhone 15 · 390×844px · Sonnet 4.5
                     </p>
                   </div>
@@ -3256,7 +4210,7 @@ CONSTRAINTS:
                             background: uiTab === t.id ? "#1a1a1a" : "none",
                             border: "none",
                             color:
-                              uiTab === t.id ? "var(--primary)" : "#3a3a3a",
+                              uiTab === t.id ? "var(--primary)" : "#bcc7c4",
                             padding: "8px 16px",
                             cursor: "pointer",
                             fontFamily: "inherit",
@@ -3273,7 +4227,7 @@ CONSTRAINTS:
                       style={{
                         background: "none",
                         border: "1px solid #2a2a2a",
-                        color: "#777",
+                        color: "#bcc7c4",
                         padding: "8px 14px",
                         borderRadius: 6,
                         cursor: "pointer",
@@ -3293,7 +4247,7 @@ CONSTRAINTS:
                     <p
                       style={{
                         textAlign: "center",
-                        color: "#666",
+                        color: "#adb8b5",
                         fontSize: 11,
                         marginTop: 4,
                       }}
@@ -3313,7 +4267,7 @@ CONSTRAINTS:
                         padding: "20px 18px",
                         fontSize: 11,
                         lineHeight: 1.8,
-                        color: "#888",
+                        color: "#c2cdc9",
                         maxHeight: 560,
                         overflowY: "auto",
                         overflowX: "auto",
@@ -3323,7 +4277,7 @@ CONSTRAINTS:
                     >
                       {htmlOutput}
                     </pre>
-                    <p style={{ color: "#666", fontSize: 11, marginTop: 10 }}>
+                    <p style={{ color: "#b0bbb8", fontSize: 11, marginTop: 10 }}>
                       Save as index.html · Open at 390px width for accurate
                       preview
                     </p>
@@ -3361,7 +4315,7 @@ CONSTRAINTS:
                       >
                         ✦ GOOGLE STITCH PROMPT
                       </p>
-                      <p style={{ color: "#555", fontSize: 11 }}>
+                      <p style={{ color: "#afbbb7", fontSize: 11 }}>
                         Paste into Google Stitch to generate the full app design
                       </p>
                     </div>
@@ -3370,7 +4324,7 @@ CONSTRAINTS:
                       style={{
                         background: stitchCopied ? "var(--primary)15" : "none",
                         border: `1px solid ${stitchCopied ? "var(--primary)44" : "#2a2a2a"}`,
-                        color: stitchCopied ? "var(--primary)" : "#777",
+                        color: stitchCopied ? "var(--primary)" : "#bcc7c4",
                         padding: "7px 16px",
                         borderRadius: 5,
                         cursor: "pointer",
@@ -3428,3 +4382,4 @@ CONSTRAINTS:
     </div>
   );
 }
+

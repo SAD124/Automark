@@ -11,17 +11,17 @@ export function SiteHeader() {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 pt-4">
+    <header className="sticky top-0 z-50 pt-3 sm:pt-4">
       <Container>
-        <div className="glass-panel flex items-center justify-between rounded-full border border-outline-variant/15 px-4 py-3 sm:px-6">
+        <div className="glass-panel flex items-center justify-between rounded-[1.75rem] border border-outline-variant/15 px-4 py-3 sm:rounded-full sm:px-6">
           <Link
             href="/"
-            className="font-heading text-sm font-bold uppercase tracking-[0.22em] text-on-background"
+            className="font-heading text-xs font-bold uppercase tracking-[0.2em] text-on-background sm:text-sm sm:tracking-[0.22em]"
           >
             {siteConfig.shortName}
           </Link>
 
-          <nav className="hidden items-center gap-8 md:flex">
+          <nav className="hidden items-center gap-6 lg:flex xl:gap-8">
             {navigation.map((item) => (
               <Link
                 key={item.href}
@@ -33,17 +33,17 @@ export function SiteHeader() {
             ))}
           </nav>
 
-          <div className="hidden items-center gap-3 md:flex">
+          <div className="hidden items-center gap-2 lg:flex xl:gap-3">
             <ButtonLink
               href="/business-validator"
               variant="secondary"
-              className="min-h-10 px-5 py-2 text-sm"
+              className="min-h-10 px-4 py-2 text-sm xl:px-5"
             >
               Business Validator
             </ButtonLink>
             <ButtonLink
               href="/#book-call"
-              className="min-h-10 px-5 py-2 text-sm"
+              className="min-h-10 px-4 py-2 text-sm xl:px-5"
             >
               Book a Call
             </ButtonLink>
@@ -52,7 +52,7 @@ export function SiteHeader() {
           <button
             type="button"
             aria-label="Toggle navigation"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-outline-variant/20 text-on-background md:hidden"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-outline-variant/20 text-on-background lg:hidden"
             onClick={() => setIsOpen((value) => !value)}
           >
             <span className="sr-only">Menu</span>
@@ -70,7 +70,7 @@ export function SiteHeader() {
         </div>
 
         {isOpen ? (
-          <div className="glass-panel mt-3 rounded-4xl border border-outline-variant/15 p-6 md:hidden">
+          <div className="glass-panel mt-3 rounded-[2rem] border border-outline-variant/15 p-5 lg:hidden">
             <div className="flex flex-col gap-5">
               {navigation.map((item) => (
                 <Link
