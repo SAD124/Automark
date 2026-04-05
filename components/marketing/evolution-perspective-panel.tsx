@@ -3,42 +3,28 @@
 import { useRef } from "react";
 import { motion, useReducedMotion, useScroll, useSpring, useTransform } from "framer-motion";
 
+const smoothEase: [number, number, number, number] = [0.22, 1, 0.36, 1];
+
 const phaseChips = [
   { label: "Then", value: "Prompting", emphasis: "default" },
   { label: "Now", value: "Orchestration", emphasis: "default" },
   { label: "Edge", value: "Evaluation", emphasis: "highlight" },
 ] as const;
 
-const panelVariants = {
-  hidden: {
-    opacity: 0,
-    y: 56,
-    rotateX: -12,
-    scale: 0.97,
-    filter: "blur(12px)",
-  },
+const panelContentVariants = {
+  hidden: {},
   visible: {
-    opacity: 1,
-    y: 0,
-    rotateX: 0,
-    scale: 1,
-    filter: "blur(0px)",
     transition: {
-      duration: 0.72,
-      ease: [0.22, 1, 0.36, 1],
       staggerChildren: 0.08,
       delayChildren: 0.04,
     },
   },
 };
 
-const reducedMotionPanelVariants = {
-  hidden: { opacity: 0 },
+const reducedMotionPanelContentVariants = {
+  hidden: {},
   visible: {
-    opacity: 1,
     transition: {
-      duration: 0.24,
-      ease: "easeOut",
       staggerChildren: 0.04,
     },
   },
@@ -56,7 +42,7 @@ const itemVariants = {
     filter: "blur(0px)",
     transition: {
       duration: 0.48,
-      ease: [0.22, 1, 0.36, 1],
+      ease: smoothEase,
     },
   },
 };
@@ -67,7 +53,7 @@ const reducedMotionItemVariants = {
     opacity: 1,
     transition: {
       duration: 0.2,
-      ease: "easeOut",
+      ease: smoothEase,
     },
   },
 };
@@ -107,11 +93,11 @@ function EvolutionPhaseChip({
       viewport={{ once: true, amount: 0.6 }}
       transition={
         prefersReducedMotion
-          ? undefined
+            ? undefined
           : {
               duration: 0.42,
               delay: 0.12 + index * 0.06,
-              ease: [0.22, 1, 0.36, 1],
+              ease: smoothEase,
             }
       }
       style={prefersReducedMotion ? undefined : { y: chipY }}
@@ -166,17 +152,43 @@ export function EvolutionPerspectivePanel() {
     },
   );
 
-  const activePanelVariants = prefersReducedMotion ? reducedMotionPanelVariants : panelVariants;
   const activeItemVariants = prefersReducedMotion ? reducedMotionItemVariants : itemVariants;
+  const activePanelContentVariants = prefersReducedMotion
+    ? reducedMotionPanelContentVariants
+    : panelContentVariants;
 
   return (
     <motion.article
       ref={ref}
       className="relative overflow-hidden rounded-[2rem] bg-surface-container-high p-6 [transform-style:preserve-3d] sm:p-8 xl:sticky xl:top-24 xl:p-10"
-      variants={activePanelVariants}
-      initial="hidden"
-      whileInView="visible"
+      initial={
+        prefersReducedMotion
+          ? { opacity: 0 }
+          : {
+              opacity: 0,
+              y: 56,
+              rotateX: -12,
+              scale: 0.97,
+              filter: "blur(12px)",
+            }
+      }
+      whileInView={
+        prefersReducedMotion
+          ? { opacity: 1 }
+          : {
+              opacity: 1,
+              y: 0,
+              rotateX: 0,
+              scale: 1,
+              filter: "blur(0px)",
+            }
+      }
       viewport={{ once: true, amount: 0.3 }}
+      transition={
+        prefersReducedMotion
+          ? { duration: 0.24, ease: "easeOut" }
+          : { duration: 0.72, ease: smoothEase }
+      }
       style={
         prefersReducedMotion
           ? undefined
@@ -188,46 +200,53 @@ export function EvolutionPerspectivePanel() {
       }
     >
       <motion.div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-radial-[circle_at_top_left] from-primary/18 via-transparent to-transparent"
-        style={prefersReducedMotion ? undefined : { opacity: glowOpacity }}
-      />
-      <motion.div
-        aria-hidden
-        className="absolute inset-x-8 top-0 h-px bg-linear-to-r from-transparent via-primary/35 to-transparent"
-        variants={activeItemVariants}
-      />
+        variants={activePanelContentVariants}
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, amount: 0.3 }}
+      >
+        <motion.div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-radial-[circle_at_top_left] from-primary/18 via-transparent to-transparent"
+          style={prefersReducedMotion ? undefined : { opacity: glowOpacity }}
+        />
+        <motion.div
+          aria-hidden
+          className="absolute inset-x-8 top-0 h-px bg-linear-to-r from-transparent via-primary/35 to-transparent"
+          variants={activeItemVariants}
+        />
 
-      <motion.p
-        className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/80"
-        variants={activeItemVariants}
-      >
-        Why this matters now
-      </motion.p>
-      <motion.h3
-        className="mt-5 max-w-xl font-heading text-[2rem] font-black leading-[0.95] tracking-[-0.06em] text-white sm:text-[2.4rem]"
-        variants={activeItemVariants}
-      >
-        The winning layer is no longer the model. It is the operating system around it.
-      </motion.h3>
-      <motion.p
-        className="mt-5 max-w-xl text-[15px] leading-8 text-on-surface-variant sm:text-base"
-        variants={activeItemVariants}
-      >
-        Teams that stay in the copilot era will keep collecting fragmented wins. Teams that build
-        orchestration, evaluation, and clear human control will compound speed and signal across
-        the business.
-      </motion.p>
+        <motion.p
+          className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/80"
+          variants={activeItemVariants}
+        >
+          Why this matters now
+        </motion.p>
+        <motion.h3
+          className="mt-5 max-w-xl font-heading text-[2rem] font-black leading-[0.95] tracking-[-0.06em] text-white sm:text-[2.4rem]"
+          variants={activeItemVariants}
+        >
+          The winning layer is no longer the model. It is the operating system around it.
+        </motion.h3>
+        <motion.p
+          className="mt-5 max-w-xl text-[15px] leading-8 text-on-surface-variant sm:text-base"
+          variants={activeItemVariants}
+        >
+          Teams that stay in the copilot era will keep collecting fragmented wins. Teams that build
+          orchestration, evaluation, and clear human control will compound speed and signal across
+          the business.
+        </motion.p>
 
-      <motion.div className="mt-8 grid gap-3 sm:grid-cols-3" variants={activeItemVariants}>
-        {phaseChips.map((chip, index) => (
-          <EvolutionPhaseChip
-            key={chip.label}
-            chip={chip}
-            index={index}
-            scrollYProgress={scrollYProgress}
-          />
-        ))}
+        <motion.div className="mt-8 grid gap-3 sm:grid-cols-3" variants={activeItemVariants}>
+          {phaseChips.map((chip, index) => (
+            <EvolutionPhaseChip
+              key={chip.label}
+              chip={chip}
+              index={index}
+              scrollYProgress={scrollYProgress}
+            />
+          ))}
+        </motion.div>
       </motion.div>
     </motion.article>
   );

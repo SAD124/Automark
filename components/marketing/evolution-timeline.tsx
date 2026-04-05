@@ -4,6 +4,8 @@ import { useRef } from "react";
 import { motion, useReducedMotion, useScroll, useSpring, useTransform } from "framer-motion";
 import { evolutionTimeline } from "@/content/site";
 
+const smoothEase: [number, number, number, number] = [0.22, 1, 0.36, 1];
+
 const timelineContainerVariants = {
   hidden: {},
   visible: {
@@ -32,7 +34,7 @@ const timelineCardVariants = {
     filter: "blur(0px)",
     transition: {
       duration: 0.72,
-      ease: [0.22, 1, 0.36, 1],
+      ease: smoothEase,
     },
   },
 };
@@ -45,7 +47,7 @@ const reducedMotionCardVariants = {
     opacity: 1,
     transition: {
       duration: 0.24,
-      ease: "easeOut",
+      ease: smoothEase,
     },
   },
 };
@@ -126,7 +128,7 @@ function EvolutionTimelineCard({
             : {
                 duration: 0.36,
                 delay: 0.3 + index * 0.12,
-                ease: [0.22, 1, 0.36, 1],
+                ease: smoothEase,
               }
         }
       />

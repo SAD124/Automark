@@ -6,6 +6,8 @@ import { ButtonLink } from "@/components/ui/button-link";
 import { Container } from "@/components/ui/container";
 import { heroStats } from "@/content/site";
 
+const smoothEase: [number, number, number, number] = [0.22, 1, 0.36, 1];
+
 const containerVariants = {
   hidden: {},
   visible: {
@@ -28,7 +30,7 @@ const itemVariants = {
     filter: "blur(0px)",
     transition: {
       duration: 0.72,
-      ease: [0.22, 1, 0.36, 1],
+      ease: smoothEase,
     },
   },
 };
@@ -48,7 +50,7 @@ const lineVariants = {
     transition: {
       duration: 0.78,
       delay: 0.16 + index * 0.1,
-      ease: [0.22, 1, 0.36, 1],
+      ease: smoothEase,
     },
   }),
 };
@@ -68,7 +70,7 @@ const statVariants = {
     transition: {
       duration: 0.64,
       delay: 0.42 + index * 0.08,
-      ease: [0.22, 1, 0.36, 1],
+      ease: smoothEase,
     },
   }),
 };
@@ -81,7 +83,7 @@ const reducedMotionVariants = {
     opacity: 1,
     transition: {
       duration: 0.22,
-      ease: "easeOut",
+      ease: smoothEase,
     },
   },
 };
