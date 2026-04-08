@@ -50,9 +50,11 @@ Return ONLY a valid JSON object with this exact shape:
 
 Rules:
 - All scores must be integers from 0 to 100.
-- Keep the summary to 1 or 2 sentences.
-- Recommendations must be specific, actionable, and business-friendly.
+- Keep the readinessBand to 2 or 3 words.
+- Keep the summary to one short sentence, maximum 18 words.
+- Recommendations must be specific, actionable, and short. Maximum 12 words each.
 - Tool suggestions must be realistic operational AI solutions, not vague buzzwords.
+- Keep each tool reason to one short sentence, maximum 14 words.
 - Use the responses and baseline rubric, but improve the wording and prioritization where helpful.
 - Never include markdown, code fences, or commentary outside JSON.`;
 

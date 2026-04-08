@@ -574,41 +574,41 @@ function buildRecommendations(
 
   if (scoreMap.systems < 55) {
     recommendations.push(
-      "Standardize the core operating stack first so AI can plug into a stable workflow instead of scattered tools.",
+      "Clean up and connect core tools before layering in AI.",
     );
   }
 
   if (scoreMap.people < 55) {
     recommendations.push(
-      "Assign one internal owner and run a single pilot workflow before asking the wider team to change behavior.",
+      "Assign one clear owner for the first rollout.",
     );
   }
 
   if (scoreMap.data < 55) {
     recommendations.push(
-      "Clean up the most important customer and operational data before relying on AI to generate actions or insights.",
+      "Fix the key data gaps before automating decisions.",
     );
   }
 
   if (scoreMap.strategy < 55) {
     recommendations.push(
-      "Define a 60-day AI budget, one business metric, and one narrow use case so the pilot has a clear success condition.",
+      "Pick one use case, one budget, and one KPI.",
     );
   }
 
   if (recommendations.length < 3) {
     const painPointRecommendation =
       painPoint === "lead_follow_up"
-        ? "Start with lead response and CRM hygiene, because that is one of the fastest AI pilots to measure."
+        ? "Start with lead response and CRM hygiene first."
         : painPoint === "customer_support"
-          ? "Begin with repetitive support questions where AI can cut response time without changing the whole business."
+          ? "Start with repetitive support questions and routing."
           : painPoint === "reporting_data_entry"
-            ? "Target reporting and data-entry work first, since these tasks create clear time savings and quick ROI."
+            ? "Start with reporting and manual data-entry work."
             : painPoint === "content_outreach"
-              ? "Use AI to speed up content and outbound production, but keep human review on messaging and brand quality."
+              ? "Use AI to speed up content and outbound production."
               : painPoint === "internal_operations"
-                ? "Focus on internal handoffs and documentation so the team feels operational relief early."
-                : "Choose one measurable workflow before expanding the AI roadmap beyond the pilot phase.";
+                ? "Focus on internal handoffs and documentation first."
+                : "Choose one measurable workflow before expanding further.";
 
     recommendations.push(painPointRecommendation);
   }
@@ -616,8 +616,8 @@ function buildRecommendations(
   if (recommendations.length < 3) {
     recommendations.push(
       overallScore >= 70
-        ? "You are ready for a production-minded pilot, so prioritize integration, governance, and clear rollout milestones."
-        : "Treat the first implementation as an operational experiment and prove value with one workflow before scaling.",
+        ? "Run a production-minded pilot with clear milestones."
+        : "Prove value with one workflow before scaling.",
     );
   }
 
@@ -646,14 +646,14 @@ function buildSummary(
   strongestCategory: string,
 ) {
   if (overallScore >= 75) {
-    return `Your business looks ${readinessBand.toLowerCase()}, with ${strongestCategory.toLowerCase()} already supporting a meaningful AI pilot and ${weakestCategory.toLowerCase()} as the main execution gap to tighten.`;
+    return `${strongestCategory} is strong. Tighten ${weakestCategory.toLowerCase()} to scale AI faster.`;
   }
 
   if (overallScore >= 50) {
-    return `You have enough foundation to begin, but ${weakestCategory.toLowerCase()} needs attention before AI adoption becomes repeatable and scalable.`;
+    return `You can start, but ${weakestCategory.toLowerCase()} is still slowing rollout.`;
   }
 
-  return `There is clear interest in AI, but ${weakestCategory.toLowerCase()} is still limiting execution and should be stabilized before a bigger rollout.`;
+  return `Interest is there, but ${weakestCategory.toLowerCase()} needs work before a reliable AI pilot.`;
 }
 
 function getReadinessBand(overallScore: number) {
