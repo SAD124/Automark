@@ -21,12 +21,13 @@ type ClaudeUsage = {
   cache_read_input_tokens?: number;
 };
 
-type OpenAIUsage = {
-  prompt_tokens?: number;
-  completion_tokens?: number;
+type GeminiUsage = {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
 };
 
-type Usage = ClaudeUsage & OpenAIUsage;
+type Usage = ClaudeUsage & GeminiUsage;
 
 type AIResult = {
   text: string;
@@ -147,17 +148,17 @@ const PRICE = {
   cacheWrite: 1.25 / 1_000_000,
   cacheRead: 0.1 / 1_000_000,
 };
-// GPT-4o (May 2024 pricing)
-const PRICE_GPT4O = {
-  input: 2.5 / 1_000_000,
-  output: 10.0 / 1_000_000,
+// Gemini 2.5 Flash pricing.
+const PRICE_GEMINI = {
+  input: 0.3 / 1_000_000,
+  output: 2.5 / 1_000_000,
 };
 
-function calcGPTCost(usage?: OpenAIUsage) {
+function calcGeminiCost(usage?: GeminiUsage) {
   if (!usage) return 0;
   return (
-    Math.max(0, usage.prompt_tokens || 0) * PRICE_GPT4O.input +
-    Math.max(0, usage.completion_tokens || 0) * PRICE_GPT4O.output
+    Math.max(0, usage.promptTokenCount || 0) * PRICE_GEMINI.input +
+    Math.max(0, usage.candidatesTokenCount || 0) * PRICE_GEMINI.output
   );
 }
 
@@ -391,8 +392,8 @@ async function callClaude(
   throw new Error("Claude request failed after retries.");
 }
 
-// ─── OpenAI call ─────────────────────────────────────────────────────────────
-async function callOpenAI(
+// ─── Gemini call ─────────────────────────────────────────────────────────────
+async function callGemini(
   systemPrompt: string,
   userMsg: string,
   maxTokens = 3200,
@@ -401,13 +402,13 @@ async function callOpenAI(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60_000);
     try {
-      const res = await fetch("/api/openai", {
+      const res = await fetch("/api/gemini", {
         method: "POST",
         signal: controller.signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "gpt-4o",
-          max_tokens: maxTokens,
+          model: "gemini-2.5-flash",
+          max_tokens: Math.max(maxTokens, 8192),
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userMsg },
@@ -434,12 +435,12 @@ async function callOpenAI(
 
       const data = (await res.json()) as {
         error?: { message?: string };
-        choices?: Array<{ message?: { content?: string } }>;
-        usage?: OpenAIUsage;
+        text?: string;
+        usage?: GeminiUsage;
       };
-      if (data.error) throw new Error(data.error.message || "OpenAI error");
+      if (data.error) throw new Error(data.error.message || "Gemini error");
 
-      const text = data.choices?.[0]?.message?.content || "";
+      const text = data.text || "";
       const usage = data.usage || {};
       return { text, usage };
     } catch (err) {
@@ -451,17 +452,31 @@ async function callOpenAI(
         continue;
       }
       throw isTimeout
-        ? new Error("OpenAI timed out after retries. Please try again.")
+        ? new Error("Gemini timed out after retries. Please try again.")
         : error;
     }
   }
 
-  throw new Error("OpenAI request failed after retries.");
+  throw new Error("Gemini request failed after retries.");
 }
 
 // ─── JSON parse with truncation repair ───────────────────────────────────────
 function parseAgentJSON(raw: string): RawEvaluation {
-  const match = raw.match(/\{[\s\S]*\}/);
+  const cleaned = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  try {
+    const parsed = JSON.parse(cleaned) as RawEvaluation | string;
+    if (typeof parsed === "string") {
+      return JSON.parse(parsed) as RawEvaluation;
+    }
+    return parsed;
+  } catch {}
+
+  const match = cleaned.match(/\{[\s\S]*\}/);
 
   if (!match) {
     throw new Error(
@@ -470,7 +485,11 @@ function parseAgentJSON(raw: string): RawEvaluation {
   }
 
   try {
-    return JSON.parse(match[0]) as RawEvaluation;
+    const parsed = JSON.parse(match[0]) as RawEvaluation | string;
+    if (typeof parsed === "string") {
+      return JSON.parse(parsed) as RawEvaluation;
+    }
+    return parsed;
   } catch {
     throw new Error("Invalid JSON format from agent");
   }
@@ -932,7 +951,7 @@ function Spinner({
     "Running financial models...",
     "Assessing competition landscape...",
     "Generating viability signals...",
-    "Claude + GPT-4o in parallel...",
+    "Claude + Gemini in parallel...",
     "Finalizing evaluation...",
   ];
 
@@ -1397,7 +1416,7 @@ function PhonePreview({ html }: { html: string }) {
 // ─── AI Personas Bar ─────────────────────────────────────────────────────────
 const CEO_PHOTOS = {
   dario: "https://unavatar.io/x/dario_amodei",
-  sam: "https://unavatar.io/x/sama",
+  sam: "https://unavatar.io/x/demishassabis",
 };
 
 type PersonaKey = keyof typeof CEO_PHOTOS;
@@ -1478,12 +1497,12 @@ const vlColorFn = (label: VerdictLabel) =>
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function AIPersonasBarLegacy({
   claudeEval,
-  gptEval,
-  gptError,
+  geminiEval,
+  geminiError,
 }: {
   claudeEval?: Evaluation;
-  gptEval: Evaluation | null;
-  gptError: string;
+  geminiEval: Evaluation | null;
+  geminiError: string;
 }) {
   const personas = [
     {
@@ -1496,11 +1515,11 @@ function AIPersonasBarLegacy({
     },
     {
       key: "sam" as PersonaKey,
-      name: "Sam Altman",
-      title: "CEO · OpenAI",
+      name: "Demis Hassabis",
+      title: "CEO · Google DeepMind",
       accent: "#74b9ff",
-      eval: gptEval,
-      tag: "GPT-4o",
+      eval: geminiEval,
+      tag: "Gemini",
     },
   ];
 
@@ -1511,17 +1530,17 @@ function AIPersonasBarLegacy({
       </div>
       <div className="grid gap-3 xl:grid-cols-2">
         {personas.map((p) => {
-          const isLoading = p.key === "sam" && !p.eval && !gptError;
-          const hasError = p.key === "sam" && Boolean(gptError);
+          const isLoading = p.key === "sam" && !p.eval && !geminiError;
+          const hasError = p.key === "sam" && Boolean(geminiError);
           const cardEval = p.eval;
           const quote = cardEval?.executiveSummary
             ? `"${cardEval.executiveSummary}"`
             : isLoading
               ? "Running secondary model review against the same market brief."
               : hasError
-                ? gptError
-                    .replace("GPT-4o unavailable: ", "")
-                    .replace("GPT-4o parse error: ", "")
+                ? geminiError
+                    .replace("Gemini unavailable: ", "")
+                    .replace("Gemini parse error: ", "")
                 : "No secondary take available yet.";
           return (
             <div
@@ -1654,7 +1673,7 @@ function AIPersonasBarLegacy({
                   </div>
                 )}
 
-                {/* GPT loading */}
+                {/* Gemini loading */}
                 {isLoading && (
                   <div
                     style={{ display: "flex", alignItems: "center", gap: 6 }}
@@ -1663,7 +1682,7 @@ function AIPersonasBarLegacy({
                   </div>
                 )}
 
-                {/* GPT loading */}
+                {/* Gemini loading */}
                 {isLoading && (
                   <div
                     style={{ display: "flex", alignItems: "center", gap: 6 }}
@@ -1684,7 +1703,7 @@ function AIPersonasBarLegacy({
                   </div>
                 )}
 
-                {/* GPT error */}
+                {/* Gemini error */}
                 {hasError && (
                   <div
                     style={{
@@ -1694,13 +1713,13 @@ function AIPersonasBarLegacy({
                     }}
                   >
                     ⚠{" "}
-                    {gptError
-                      .replace("GPT-4o unavailable: ", "")
-                      .replace("GPT-4o parse error: ", "")}
+                    {geminiError
+                      .replace("Gemini unavailable: ", "")
+                      .replace("Gemini parse error: ", "")}
                   </div>
                 )}
 
-                {/* GPT verdict inline */}
+                {/* Gemini verdict inline */}
                 {p.key === "sam" && p.eval && (
                   <div>
                     <div
@@ -1746,7 +1765,7 @@ function AIPersonasBarLegacy({
       </div>
 
       {/* Consensus bar — only when both results available */}
-      {gptEval && <ConsensusBar gptEval={gptEval} />}
+      {geminiEval && <ConsensusBar geminiEval={geminiEval} />}
     </div>
   );
 }
@@ -1754,16 +1773,16 @@ function AIPersonasBarLegacy({
 // ─── Consensus Score ──────────────────────────────────────────────────────────
 function AIPersonasBar({
   claudeEval,
-  gptEval,
-  gptError,
+  geminiEval,
+  geminiError,
 }: {
   claudeEval?: Evaluation;
-  gptEval: Evaluation | null;
-  gptError: string;
+  geminiEval: Evaluation | null;
+  geminiError: string;
 }) {
-  const cleanGptError = gptError
-    .replace("GPT-4o unavailable: ", "")
-    .replace("GPT-4o parse error: ", "");
+  const cleanGeminiError = geminiError
+    .replace("Gemini unavailable: ", "")
+    .replace("Gemini parse error: ", "");
   const personas = [
     {
       key: "dario" as PersonaKey,
@@ -1775,22 +1794,22 @@ function AIPersonasBar({
     },
     {
       key: "sam" as PersonaKey,
-      name: "Sam Altman",
-      title: "CEO · OpenAI",
+      name: "Demis Hassabis",
+      title: "CEO · Google DeepMind",
       accent: "#74b9ff",
-      eval: gptEval,
-      tag: "GPT-4o",
+      eval: geminiEval,
+      tag: "Gemini",
     },
   ];
   const [activePersonaKey, setActivePersonaKey] = useState<PersonaKey | null>(
-    claudeEval ? "dario" : gptEval || gptError ? "sam" : null,
+    claudeEval ? "dario" : geminiEval || geminiError ? "sam" : null,
   );
   const activePersona =
     personas.find((persona) => persona.key === activePersonaKey) || null;
   const activeEval = activePersona?.eval || null;
   const activeLoading =
-    activePersona?.key === "sam" && !activePersona.eval && !gptError;
-  const activeError = activePersona?.key === "sam" && Boolean(gptError);
+    activePersona?.key === "sam" && !activePersona.eval && !geminiError;
+  const activeError = activePersona?.key === "sam" && Boolean(geminiError);
   const memoSignals =
     activeEval?.keyDrivers && activeEval.keyDrivers.length > 0
       ? activeEval.keyDrivers.slice(0, 3)
@@ -1842,8 +1861,8 @@ function AIPersonasBar({
       </div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         {personas.map((p) => {
-          const isLoading = p.key === "sam" && !p.eval && !gptError;
-          const hasError = p.key === "sam" && Boolean(gptError);
+          const isLoading = p.key === "sam" && !p.eval && !geminiError;
+          const hasError = p.key === "sam" && Boolean(geminiError);
           const isActive = activePersonaKey === p.key;
           return (
             <button
@@ -1997,7 +2016,7 @@ function AIPersonasBar({
                       lineHeight: 1.4,
                     }}
                   >
-                    ⚠ {cleanGptError}
+                    ⚠ {cleanGeminiError}
                   </div>
                 )}
 
@@ -2118,7 +2137,7 @@ function AIPersonasBar({
           {activeLoading ? (
             <div className="grid gap-3 text-[12px] leading-[1.7] text-[#8e9b96]">
               <p className="m-0">
-                GPT-4o is still reviewing the same market brief. The memo will
+                Gemini is still reviewing the same market brief. The memo will
                 populate here as soon as the secondary model returns a verdict.
               </p>
               <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-[#74b9ff]">
@@ -2131,7 +2150,7 @@ function AIPersonasBar({
               <p className="m-0">
                 This model memo is unavailable for the current run.
               </p>
-              <p className="m-0 text-[#8e9b96]">{cleanGptError}</p>
+              <p className="m-0 text-[#8e9b96]">{cleanGeminiError}</p>
             </div>
           ) : activeEval ? (
             <div className="grid gap-4 xl:grid-cols-2">
@@ -2273,13 +2292,13 @@ function AIPersonasBar({
         </motion.div>
       )}
 
-      {gptEval && <ConsensusBar gptEval={gptEval} />}
+      {geminiEval && <ConsensusBar geminiEval={geminiEval} />}
     </div>
   );
 }
 
-function ConsensusBar({ gptEval }: { gptEval: Evaluation | null }) {
-  if (!gptEval) return null;
+function ConsensusBar({ geminiEval }: { geminiEval: Evaluation | null }) {
+  if (!geminiEval) return null;
 
   // Agreement is shown at the bottom of AIPersonasBar — this is a separate block
   return null; // handled inline above
@@ -2380,8 +2399,8 @@ export default function AutoMarkBusinessValidator() {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
 
   const [evaluation, setEval] = useState<Evaluation | null>(null);
-  const [gptEval, setGptEval] = useState<Evaluation | null>(null); // OpenAI parallel result
-  const [gptError, setGptError] = useState(""); // non-fatal if GPT fails
+  const [geminiEval, setGeminiEval] = useState<Evaluation | null>(null); // Gemini parallel result
+  const [geminiError, setGeminiError] = useState(""); // non-fatal if Gemini fails
   const [htmlOutput, setHTML] = useState("");
   const [uiTab, setUiTab] = useState<UiTab>("preview");
   const [error, setError] = useState("");
@@ -2408,10 +2427,10 @@ export default function AutoMarkBusinessValidator() {
     }
   }, []);
 
-  const addCost = useCallback((label: string, usage: Usage, isGPT = false) => {
-    const cost = isGPT ? calcGPTCost(usage) : calcCost(usage);
-    const tokens = isGPT
-      ? (usage.prompt_tokens || 0) + (usage.completion_tokens || 0)
+  const addCost = useCallback((label: string, usage: Usage, isGemini = false) => {
+    const cost = isGemini ? calcGeminiCost(usage) : calcCost(usage);
+    const tokens = isGemini
+      ? (usage.promptTokenCount || 0) + (usage.candidatesTokenCount || 0)
       : (usage.input_tokens || 0) +
         (usage.output_tokens || 0) +
         (usage.cache_creation_input_tokens || 0) +
@@ -2537,9 +2556,9 @@ export default function AutoMarkBusinessValidator() {
 
     setStep("agent1");
     setError("");
-    setGptError("");
+    setGeminiError("");
     setCostRuns([]);
-    setGptEval(null);
+    setGeminiEval(null);
 
     const msg = `App: ${trimmedForm.appName}
 What it does: ${trimmedForm.description}
@@ -2548,10 +2567,10 @@ Execution speed: ${deploymentSpeed}
 Budget: ${trimmedForm.budget || BUDGET_OPTIONS[1] || "$0 bootstrap"}
 Revenue model: ${trimmedForm.revenue || REVENUE_MODEL_OPTIONS[0]?.label || "Open to suggestions"}`;
 
-    // ── Run Claude + GPT-4o in parallel ──────────────────────────────────────
-    const [claudeResult, gptResult] = await Promise.allSettled([
+    // ── Run Claude + Gemini in parallel ──────────────────────────────────────
+    const [claudeResult, geminiResult] = await Promise.allSettled([
       callClaude(AGENT1_SYSTEM, msg, 3200),
-      callOpenAI(AGENT1_SYSTEM, msg, 3200),
+      callGemini(AGENT1_SYSTEM, msg, 3200),
     ]);
 
     // Claude is required — if it fails, abort
@@ -2575,18 +2594,18 @@ Revenue model: ${trimmedForm.revenue || REVENUE_MODEL_OPTIONS[0]?.label || "Open
       return;
     }
 
-    // GPT-4o is non-fatal — show result if available, show warning if not
-    if (gptResult.status === "fulfilled") {
+    // Gemini is non-fatal — show result if available, show warning if not
+    if (geminiResult.status === "fulfilled") {
       try {
-        const { text: gptText, usage: gptUsage } = gptResult.value;
-        addCost("GPT-4o (Sam) — Evaluate", gptUsage, true);
-        const gptParsed = parseAgentJSON(gptText);
-        setGptEval(normalizeEval(gptParsed));
+        const { text: geminiText, usage: geminiUsage } = geminiResult.value;
+        addCost("Gemini (Demis) — Evaluate", geminiUsage, true);
+        const geminiParsed = parseAgentJSON(geminiText);
+        setGeminiEval(normalizeEval(geminiParsed));
       } catch (e) {
-        setGptError("GPT-4o parse error: " + getErrorMessage(e));
+        setGeminiError("Gemini parse error: " + getErrorMessage(e));
       }
     } else {
-      setGptError("GPT-4o unavailable: " + getErrorMessage(gptResult.reason));
+      setGeminiError("Gemini unavailable: " + getErrorMessage(geminiResult.reason));
     }
 
     setStep("done1");
@@ -2649,8 +2668,8 @@ Design the MOST COMPELLING screen that shows this app's core value. Make it stun
     setDeploymentSpeed("Standard (60s Execution)");
     setOpenMenu(null);
     setEval(null);
-    setGptEval(null);
-    setGptError("");
+    setGeminiEval(null);
+    setGeminiError("");
     setHTML("");
     setError("");
     setCostRuns([]);
@@ -3761,7 +3780,7 @@ CONSTRAINTS:
                       )}
                     </button>
                     <p className="pipeline-meta-note">
-                      Claude + GPT-4o execute in parallel. Strategy view first,
+                      Claude + Gemini execute in parallel. Strategy view first,
                       UI concept second.
                     </p>
                   </div>
@@ -3927,8 +3946,8 @@ CONSTRAINTS:
               <div className="px-[26px] pb-0 pt-5">
                 <AIPersonasBar
                   claudeEval={evaluation}
-                  gptEval={gptEval}
-                  gptError={gptError}
+                  geminiEval={geminiEval}
+                  geminiError={geminiError}
                 />
               </div>
             </section>
